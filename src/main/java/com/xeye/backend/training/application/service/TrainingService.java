@@ -29,6 +29,8 @@ import org.springframework.transaction.annotation.Transactional;
 import java.time.Instant;
 import java.util.List;
 import java.util.Optional;
+import java.util.Set;
+import java.util.stream.Collectors;
 
 /**
  * Orquesta el flujo de training:
@@ -64,8 +66,49 @@ public class TrainingService implements TrainingUseCases, TrainingLaunchService,
 
     @Override
     @Transactional(readOnly = true)
-    public List<Training> listByList(Long userId, Long listId) {
-        return trainings.findByListIdAndUserId(listId, userId);
+    public List<ListedTraining> listByList(Long userId, Long listId) {
+        List<Training> history = trainings.findByListIdAndUserId(listId, userId);
+        if (history.isEmpty()) {
+            return List.of();
+        }
+        Set<Long> currentElementIds = currentElementIds(listId);
+        return history.stream()
+                .map(training -> new ListedTraining(training, coversCurrentElements(training, currentElementIds)))
+                .toList();
+    }
+
+    @Override
+    @Transactional
+    public Training use(Long userId, Long trainingId) {
+        Training training = trainings.findByIdAndUserId(trainingId, userId)
+                .orElseThrow(() -> new NotFoundException("Training not found"));
+        if (training.inUse()) {
+            return training;
+        }
+        if (!coversCurrentElements(training, currentElementIds(training.listId()))) {
+            throw new ConflictException(
+                    "Only a completed training with the same trained elements as the list can be put in use");
+        }
+        trainings.clearInUseForList(training.listId());
+        training.activate();
+        Training activated = trainings.save(training);
+        // Los flags trained de los elementos no se tocan: siguen marcando qué elementos se
+        // editaron desde su último embedding, sea cual sea el training activo.
+        pushToSearch(activated);
+        log.info("Training {} put in use for list {}", activated.id(), activated.listId());
+        return activated;
+    }
+
+    private Set<Long> currentElementIds(Long listId) {
+        return elements.findByListId(listId).stream().map(Element::id).collect(Collectors.toSet());
+    }
+
+    /** Elegible para {@code in_use}: completado y con exactamente los elementos actuales de la lista. */
+    private boolean coversCurrentElements(Training training, Set<Long> currentElementIds) {
+        return training.status() == TrainingStatus.COMPLETED
+                && training.embeddingsData() != null
+                && training.elementIds() != null
+                && Set.copyOf(training.elementIds()).equals(currentElementIds);
     }
 
     @Override

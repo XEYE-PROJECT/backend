@@ -34,7 +34,9 @@ public class TrainingController {
     @GetMapping("/lists/{listId}/trainings")
     public List<TrainingResponse> listByList(@AuthenticationPrincipal AuthenticatedUser current,
                                              @PathVariable Long listId) {
-        return trainings.listByList(current.id(), listId).stream().map(TrainingResponse::from).toList();
+        return trainings.listByList(current.id(), listId).stream()
+                .map(listed -> TrainingResponse.from(listed.training(), listed.usable()))
+                .toList();
     }
 
     /** Trainings pendientes del usuario en todas sus listas — los avisos de reentrenar. */
@@ -65,6 +67,12 @@ public class TrainingController {
                                     @RequestBody(required = false) LaunchTrainingRequest request) {
         String embeddingModel = request == null ? null : request.embeddingModel();
         return TrainingResponse.from(launches.retrain(current.id(), listId, embeddingModel));
+    }
+
+    /** Activa este training como el modelo en uso de la lista (debe cubrir sus elementos actuales). */
+    @PostMapping("/trainings/{id}/use")
+    public TrainingResponse use(@AuthenticationPrincipal AuthenticatedUser current, @PathVariable Long id) {
+        return TrainingResponse.from(trainings.use(current.id(), id), true);
     }
 
     /** Lanza un training pendiente con el modelo de embedding elegido (body opcional). */

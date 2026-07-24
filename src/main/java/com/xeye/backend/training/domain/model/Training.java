@@ -95,6 +95,11 @@ public class Training {
         this.inUse = false;
     }
 
+    /** El usuario elige este training completado como el modelo activo de la lista. */
+    public void activate() {
+        this.inUse = true;
+    }
+
     public void deactivate() {
         this.inUse = false;
     }

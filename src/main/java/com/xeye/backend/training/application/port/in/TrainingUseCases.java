@@ -7,9 +7,19 @@ import java.util.List;
 /** Puerto de entrada: leer el historial de trainings de una lista o un training concreto. */
 public interface TrainingUseCases {
 
-    List<Training> listByList(Long userId, Long listId);
+    /** Un training del historial con su elegibilidad para pasar a {@code in_use} ya calculada. */
+    record ListedTraining(Training training, boolean usable) {
+    }
+
+    List<ListedTraining> listByList(Long userId, Long listId);
 
     Training get(Long userId, Long trainingId);
+
+    /**
+     * Activa este training como el modelo en uso de la lista. Solo un training completado cuyos
+     * {@code elementIds} coincidan con los elementos actuales de la lista puede activarse.
+     */
+    Training use(Long userId, Long trainingId);
 
     /** Trainings PENDING del usuario en todas sus listas (alimenta los avisos de la UI). */
     List<Training> pendingForUser(Long userId);

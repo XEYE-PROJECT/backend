@@ -1,0 +1,99 @@
+spring:
+  application:
+    name: xeye-backend
+  # Un `mvn spring-boot:run` a secas arranca el perfil dev (training mock, logs verbosos).
+  profiles:
+    default: dev
+  datasource:
+    url: ${DB_URL:jdbc:mysql://localhost:3306/xeye?allowPublicKeyRetrieval=true&useSSL=false&serverTimezone=UTC&createDatabaseIfNotExist=true}
+    username: ${DB_USERNAME:xeye}
+    password: ${DB_PASSWORD:xeye}
+    driver-class-name: com.mysql.cj.jdbc.Driver
+  jpa:
+    hibernate:
+      # El esquema es de Flyway. Hibernate nunca toca el DDL.
+      ddl-auto: none
+    open-in-view: false
+    properties:
+      hibernate:
+        format_sql: true
+  flyway:
+    enabled: true
+
+server:
+  port: ${SERVER_PORT:8000}
+
+# ---- Configuración propia de la aplicación (ver com.xeye.backend.shared.config) ----
+xeye:
+  jwt:
+    # 32+ caracteres para HS256. Sobreescribir en todo entorno real.
+    secret: ${JWT_SECRET:dev-only-insecure-secret-change-me-please-0123456789}
+    expiration-minutes: ${JWT_EXPIRATION_MINUTES:60}
+    issuer: xeye-backend
+  cors:
+    # Dev local: Nuxt prefiere 3000 pero puede caer a 3001/3002; 5173 es el frontend Vite antiguo.
+    allowed-origins: ${CORS_ORIGINS:http://localhost:3000,http://localhost:3001,http://localhost:3002,http://localhost:5173}
+  training:
+    # Cómo se ejecuta un training. Todos los providers reciben el mismo payload y responden por
+    # el mismo webhook — solo cambia *dónde* corre el contenedor.
+    #   mock   -> simula la finalización en el propio proceso (sin servicios externos)
+    #   docker -> un contenedor local por training (`docker run`, imagen del training-service)
+    #   lambda -> invocación asíncrona de una Lambda contenedor (solo CPU, tope de 15 min:
+    #             usarlo con ENRICHER=groq|gemini|none en el worker)
+    #   runpod -> POST del job a un endpoint Serverless de RunPod (GPU: el montaje con LLM local)
+    provider: ${TRAINING_PROVIDER:mock}
+    webhook-secret: ${TRAINING_WEBHOOK_SECRET:dev-webhook-secret}
+    # Modelos ofrecidos al lanzar un training pendiente (el primero = por defecto). Tanto el
+    # worker de training como el search-service deben poder cargar cada nombre listado aquí.
+    embedding-models: ${TRAINING_EMBEDDING_MODELS:paraphrase-multilingual-MiniLM-L12-v2,paraphrase-multilingual-mpnet-base-v2}
+    # URL base pública a la que el worker llama de vuelta (…/webhooks/training-update).
+    # Desde dentro de un contenedor no es localhost: usar http://xeye-java-backend:8000
+    # (misma red docker) o http://host.docker.internal:8000.
+    callback-base-url: ${BACKEND_URL:http://localhost:8000}
+    mock-delay-ms: ${TRAINING_MOCK_DELAY_MS:500}
+    # Un training lanzado sin actualización del webhook en este tiempo se marca fallido y su
+    # lista vuelve a pending (worker muerto / callback perdido). 0 desactiva el barrido.
+    stalled-after-minutes: ${TRAINING_STALLED_AFTER_MINUTES:30}
+    docker:
+      image: ${TRAINING_DOCKER_IMAGE:xeye-training-service:latest}
+      # Dónde escribimos el JSON del job, y ese mismo directorio tal como lo ve el daemon de
+      # docker. Coinciden si el backend corre en el host; difieren si corre en un contenedor
+      # (un bind mount siempre se resuelve en el host).
+      input-dir: ${TRAINING_INPUT_DIR:/tmp/xeye-training}
+      host-input-dir: ${TRAINING_HOST_INPUT_DIR:${TRAINING_INPUT_DIR:/tmp/xeye-training}}
+      network: ${TRAINING_DOCKER_NETWORK:xeye-network}
+      # Variables KEY=VALUE extra para el worker, p. ej. ENRICHER=groq,GROQ_API_KEY=...
+      env: ${TRAINING_DOCKER_ENV:}
+      # Valor de `docker run --gpus`: el worker usa la GPU siempre que puede. Si el daemon no
+      # puede darla (sin NVIDIA container toolkit / sin dispositivo), el launcher reintenta en
+      # CPU, así que "all" es seguro en cualquier máquina. Vacío fuerza CPU.
+      gpus: ${TRAINING_DOCKER_GPUS:all}
+      docker-binary: ${TRAINING_DOCKER_BINARY:docker}
+    lambda:
+      function-name: ${TRAINING_LAMBDA_FUNCTION:}
+      region: ${AWS_REGION:}
+    runpod:
+      api-key: ${RUNPOD_API_KEY:}
+      endpoint-id: ${RUNPOD_ENDPOINT_ID:}
+      timeout-seconds: ${RUNPOD_TIMEOUT_SECONDS:30}
+  search:
+    # log -> solo loguea el payload (dev). http -> POST al microservicio de búsqueda.
+    provider: ${SEARCH_PROVIDER:log}
+    url: ${SEARCH_SERVICE_URL:http://localhost:8002}
+    internal-service-name: backend
+    # Secreto compartido de las llamadas servidor-a-servidor backend<->search (ambas direcciones):
+    # se envía en pushes/notificaciones y lo exigen nuestros endpoints /internal/search/*.
+    internal-token: ${SEARCH_INTERNAL_TOKEN:dev-internal-token}
+
+---
+spring:
+  config:
+    activate:
+      on-profile: dev
+  jpa:
+    show-sql: true
+
+logging:
+  level:
+    com.xeye.backend: DEBUG
+    org.flywaydb: INFO

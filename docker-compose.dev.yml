@@ -1,0 +1,94 @@
+# Stack de desarrollo: MariaDB + el backend Spring Boot con hot reload.
+# La BD publica el 3307 para no chocar con la MariaDB legacy del 3306; el backend
+# mantiene el 8000 (parar antes el backend Python legacy, o sobreescribir BACKEND_PORT).
+#
+#   docker compose -f docker-compose.dev.yml up --build
+#
+# Aplicar cambios de código sin reinicio completo (DevTools reinicia la app en marcha):
+#   docker compose -f docker-compose.dev.yml exec backend mvn -o compile
+#
+# El backend también se une a la red compartida `xeye-network` (crearla una vez con
+# ../create-network.sh) para que el contenedor del search-service lo alcance como
+# http://xeye-java-backend:8000 y Traefik pueda enrutarlo.
+
+services:
+  mariadb:
+    image: mariadb:10.11
+    container_name: xeye-java-mariadb
+    environment:
+      MARIADB_ROOT_PASSWORD: ${DB_ROOT_PASSWORD:-rootpassword}
+      MARIADB_DATABASE: ${DB_NAME:-xeye}
+      MARIADB_USER: ${DB_USERNAME:-xeye}
+      MARIADB_PASSWORD: ${DB_PASSWORD:-xeye}
+    ports:
+      - "${DB_PORT:-3307}:3306"
+    volumes:
+      - xeye_java_mariadb:/var/lib/mysql
+    command: >
+      --character-set-server=utf8mb4
+      --collation-server=utf8mb4_unicode_ci
+    healthcheck:
+      test: ["CMD", "healthcheck.sh", "--connect", "--innodb_initialized"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+
+  backend:
+    build:
+      context: .
+      dockerfile: Dockerfile.dev
+    container_name: xeye-java-backend
+    depends_on:
+      mariadb:
+        condition: service_healthy
+    environment:
+      SPRING_PROFILES_ACTIVE: dev
+      DB_URL: jdbc:mysql://mariadb:3306/${DB_NAME:-xeye}?allowPublicKeyRetrieval=true&useSSL=false&serverTimezone=UTC
+      DB_USERNAME: ${DB_USERNAME:-xeye}
+      DB_PASSWORD: ${DB_PASSWORD:-xeye}
+      SERVER_PORT: 8000
+      JWT_SECRET: ${JWT_SECRET:-dev-only-insecure-secret-change-me-please-0123456789}
+      # TRAINING_PROVIDER=docker arranca un contenedor del training-service por training (ver
+      # ../training-service). Necesita el socket de docker de abajo, y BACKEND_URL debe ser la
+      # URL con la que *el contenedor del worker* llama a nuestro webhook — no localhost.
+      TRAINING_PROVIDER: ${TRAINING_PROVIDER:-mock}
+      TRAINING_WEBHOOK_SECRET: ${TRAINING_WEBHOOK_SECRET:-dev-webhook-secret}
+      BACKEND_URL: ${BACKEND_URL:-http://localhost:8000}
+      TRAINING_DOCKER_IMAGE: ${TRAINING_DOCKER_IMAGE:-xeye-training-service:latest}
+      # El JSON del job se escribe aquí y se monta en el worker desde la ruta del host
+      # (un bind mount siempre lo resuelve el daemon, es decir, en el host).
+      TRAINING_INPUT_DIR: /data/training-input
+      TRAINING_HOST_INPUT_DIR: ${PWD}/.training-input
+      TRAINING_DOCKER_NETWORK: xeye-network
+      TRAINING_DOCKER_ENV: ${TRAINING_DOCKER_ENV:-}
+      SEARCH_PROVIDER: ${SEARCH_PROVIDER:-log}
+      SEARCH_SERVICE_URL: ${SEARCH_SERVICE_URL:-http://xeye-search-service:8002}
+      SEARCH_INTERNAL_TOKEN: ${SEARCH_INTERNAL_TOKEN:-dev-internal-token}
+    ports:
+      - "${BACKEND_PORT:-8000}:8000"
+    extra_hosts:
+      # Permite al contenedor alcanzar un search-service corriendo en el host
+      # (SEARCH_SERVICE_URL=http://host.docker.internal:8002).
+      - "host.docker.internal:host-gateway"
+    networks:
+      - default
+      - xeye-network
+    volumes:
+      # Bind mount de las fuentes para hot reload; el volumen con nombre conserva la caché de Maven.
+      - ./src:/app/src
+      - ./pom.xml:/app/pom.xml
+      - xeye_java_maven:/root/.m2
+      # Solo para TRAINING_PROVIDER=docker: el socket para arrancar contenedores worker y el
+      # directorio por el que se entrega el JSON del job (misma ruta en ambos lados).
+      - /var/run/docker.sock:/var/run/docker.sock
+      - ./.training-input:/data/training-input
+
+volumes:
+  xeye_java_mariadb:
+  xeye_java_maven:
+
+networks:
+  xeye-network:
+    external: true
+    name: xeye-network

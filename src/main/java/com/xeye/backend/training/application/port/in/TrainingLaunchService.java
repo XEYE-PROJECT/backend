@@ -19,7 +19,8 @@ public interface TrainingLaunchService {
     /**
      * El usuario pide reentrenar la lista: devuelve su training PENDING, creándolo si ninguna
      * edición lo marcó. Valida antes todo lo que necesita el lanzamiento (propiedad, elementos,
-     * modelo conocido) para que una petición mala no deje una fila pendiente huérfana.
+     * modelo conocido, cupos de lanzamiento) para que una petición mala no deje una fila
+     * pendiente huérfana.
      *
      * @param embeddingModel uno de los modelos configurados, o null para el por defecto
      */
@@ -28,6 +29,8 @@ public interface TrainingLaunchService {
     /**
      * Convierte el training PENDING del usuario en un run QUEUED: fija las opciones (incluido
      * el modelo de embedding), marca los elementos como no entrenados y construye el payload.
+     * Rechaza con 409 si la lista ya tiene un run sin terminar o si el backend está al tope
+     * global de {@code xeye.training.max-concurrent} runs.
      *
      * @param embeddingModel uno de los modelos configurados, o null para el por defecto
      */

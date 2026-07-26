@@ -26,6 +26,12 @@ public interface TrainingRepository {
     /** Trainings lanzados sin terminar (ver {@code TrainingStatus.isRunning}) sin actualizar desde el corte. */
     List<Training> findRunningUpdatedBefore(Instant cutoff);
 
+    /** ¿Tiene la lista un run lanzado sin terminar? (una lista solo admite un run a la vez). */
+    boolean existsRunningByListId(Long listId);
+
+    /** Runs lanzados sin terminar en todo el backend (para el tope global de paralelismo). */
+    long countRunning();
+
     Training save(Training training);
 
     /** Pone {@code in_use = false} en todos los trainings de la lista (antes de activar uno nuevo). */

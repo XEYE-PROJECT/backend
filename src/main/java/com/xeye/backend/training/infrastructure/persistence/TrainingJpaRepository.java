@@ -24,6 +24,10 @@ interface TrainingJpaRepository extends JpaRepository<TrainingJpaEntity, Long> {
 
     List<TrainingJpaEntity> findByStatusInAndUpdatedAtBefore(Collection<String> statuses, Instant cutoff);
 
+    boolean existsByListIdAndStatusIn(Long listId, Collection<String> statuses);
+
+    long countByStatusIn(Collection<String> statuses);
+
     @Modifying(flushAutomatically = true, clearAutomatically = true)
     @Query("update TrainingJpaEntity t set t.inUse = false where t.listId = :listId")
     void clearInUseForList(@Param("listId") Long listId);

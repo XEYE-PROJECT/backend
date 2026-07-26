@@ -63,16 +63,25 @@ Scope is deliberately smaller than the Python original (university project): no 
 
 ## The training flow (the crux)
 
-Trigger → launch → callback → activate. All wiring lives in the `training` module.
+Trigger → pending → launch (user) → callback → activate. All wiring lives in the `training` module.
 
 1. **Trigger.** `ListService.update` (when the description changes) and `ElementService`
    (element created / text|description changed / deleted) publish `TrainingRequestedEvent`.
-2. **Launch.** `TrainingEventListener` handles it **`@Async` + `@TransactionalEventListener(AFTER_COMMIT)`**
-   (off the request thread, after the edit commits). It calls `TrainingService.prepareLaunch`
-   (creates a `Training` row `QUEUED`, marks **all** the list's elements `trained=false`, builds
-   the payload and records the launch-time element ids on `trainings.element_ids` — the search
-   service aligns embedding rows to elements by id), then `TrainingLauncher.launch(...)`,
-   then `markLaunched`.
+   `TrainingEventListener` handles it **`@Async` + `@TransactionalEventListener(AFTER_COMMIT)`**
+   and only calls `ensurePending`: a `Training` row `PENDING` per list (at most one, DB-enforced
+   by the V4 generated-column unique index). Nothing launches on its own.
+2. **Launch (user-initiated).** `POST /trainings/{id}/launch` (launch the pending one) or
+   `POST /lists/{listId}/trainings` (retrain now: reuses/creates the pending row) →
+   `TrainingLaunchOrchestrator` → `TrainingService.prepareLaunch` (marks the row `QUEUED`,
+   marks **all** the list's elements `trained=false`, builds the payload and records the
+   launch-time element ids on `trainings.element_ids` — the search service aligns embedding
+   rows to elements by id), then `TrainingLauncher.launch(...)`, then `markLaunched`.
+   **Launch caps** (`assertLaunchCapacity`, both → 409): a list with a launched-but-unfinished
+   run cannot launch another, and at most `xeye.training.max-concurrent` runs
+   (`TRAINING_MAX_CONCURRENT`, default 1, `<=0` = unlimited) may run backend-wide — each run is
+   a worker container eating CPU/GPU/RAM. The orchestrator serializes `prepareLaunch` behind a
+   `ReentrantLock` (single-instance monolith) so concurrent launches can't race past the caps;
+   a failed/stalled run frees its slot (`markFailed` / `TrainingStalledSweeper`).
 3. **Provider** (`xeye.training.provider`). All four send the *same* job payload
    (`TrainingLaunchCommand`, whose component names are snake_case **on purpose** — the Python
    worker reads them literally) and answer on the same webhook; they differ only in where the
@@ -111,8 +120,10 @@ its format.
 Semantics decided here (adjust if the user wants otherwise):
 - **`trained`** is list-wide: a retrain marks *all* the list's elements untrained, then trained on
   completion (a training recomputes embeddings for the whole list).
-- **`in_use`** = the one currently-active/most-recent completed training of a list.
-- No debouncing: each qualifying edit launches a training.
+- **`in_use`** = the training whose model is active for the list (auto-set on completion; the
+  user can switch via `POST /trainings/{id}/use` if it covers the list's current elements).
+- Edits never launch anything: they just keep the single PENDING row alive; the user decides
+  when (and with which embedding model) to launch, within the launch caps above.
 
 ## Search-service integration (the `search` module)
 
@@ -160,7 +171,7 @@ Hot reload: DevTools watches `target/classes`. Saving a file in an IDE that auto
 ## Configuration (`application.yml`, all overridable by env var)
 
 `xeye.jwt.{secret,expiration-minutes,issuer}`, `xeye.cors.allowed-origins`,
-`xeye.training.{provider,webhook-secret,callback-base-url,mock-delay-ms,docker.*,lambda.*,runpod.*}`,
+`xeye.training.{provider,webhook-secret,callback-base-url,mock-delay-ms,embedding-models,stalled-after-minutes,max-concurrent,docker.*,lambda.*,runpod.*}`,
 `xeye.search.{provider,url,internal-service-name,internal-token}` (`SearchProperties` lives in
 `shared/config` — the `training` and `search` modules both use it),
 `DB_URL/DB_USERNAME/DB_PASSWORD`, `SERVER_PORT`.
@@ -175,7 +186,9 @@ Authenticated (`Authorization: Bearer <jwt>`):
 `GET|PUT|DELETE /users/me` · `GET|POST /api-keys`, `PUT|DELETE /api-keys/{id}` ·
 `GET|POST /lists`, `GET|PUT|DELETE /lists/{id}` ·
 `GET|POST /lists/{listId}/elements`, `POST /lists/{listId}/elements/import`, `PUT|DELETE /elements/{id}` ·
-`GET /lists/{listId}/trainings`, `GET /trainings/{id}` · `GET /lists/{listId}/searches`.
+`GET /lists/{listId}/trainings`, `POST /lists/{listId}/trainings` (retrain), `GET /trainings/{id}`,
+`GET /trainings/pending`, `GET /trainings/embedding-models`, `POST /trainings/{id}/launch`,
+`POST /trainings/{id}/use` · `GET /lists/{listId}/searches`.
 
 ## Where to add things
 

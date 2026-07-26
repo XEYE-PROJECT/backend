@@ -54,6 +54,8 @@ xeye:
     # Un training lanzado sin actualización del webhook en este tiempo se marca fallido y su
     # lista vuelve a pending (worker muerto / callback perdido). 0 desactiva el barrido.
     stalled-after-minutes: ${TRAINING_STALLED_AFTER_MINUTES:30}
+    # Máximo de trainings corriendo a la vez en todo el backend
+    max-concurrent: ${TRAINING_MAX_CONCURRENT:1}
     docker:
       image: ${TRAINING_DOCKER_IMAGE:xeye-training-service:latest}
       # Dónde escribimos el JSON del job, y ese mismo directorio tal como lo ve el daemon de

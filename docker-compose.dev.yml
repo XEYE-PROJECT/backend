@@ -54,6 +54,7 @@ services:
       # URL con la que *el contenedor del worker* llama a nuestro webhook — no localhost.
       TRAINING_PROVIDER: ${TRAINING_PROVIDER:-mock}
       TRAINING_WEBHOOK_SECRET: ${TRAINING_WEBHOOK_SECRET:-dev-webhook-secret}
+      TRAINING_MAX_CONCURRENT: ${TRAINING_MAX_CONCURRENT:-1}
       BACKEND_URL: ${BACKEND_URL:-http://localhost:8000}
       TRAINING_DOCKER_IMAGE: ${TRAINING_DOCKER_IMAGE:-xeye-training-service:latest}
       # El JSON del job se escribe aquí y se monta en el worker desde la ruta del host

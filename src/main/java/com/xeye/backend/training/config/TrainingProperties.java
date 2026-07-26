@@ -18,6 +18,10 @@ public record TrainingProperties(
         /** Un training lanzado sin actualización del webhook en este tiempo se da por estancado
          *  y se marca fallido (su lista vuelve a pending). 0 desactiva el barrido. */
         long stalledAfterMinutes,
+        /** Máximo de trainings corriendo a la vez en todo el backend, para no saturar la
+         *  máquina que ejecuta los workers; los lanzamientos que lo superarían se rechazan
+         *  con 409. {@code <= 0} desactiva el límite. */
+        int maxConcurrent,
         Docker docker,
         Lambda lambda,
         RunPod runpod) {

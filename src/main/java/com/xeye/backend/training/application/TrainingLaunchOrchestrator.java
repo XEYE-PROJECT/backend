@@ -11,6 +11,8 @@ import org.slf4j.LoggerFactory;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Component;
 
+import java.util.concurrent.locks.ReentrantLock;
+
 /**
  * Dirige el lanzamiento, a petición del usuario, de un training pendiente. Está fuera de
  * {@link TrainingLaunchService} para que la llamada al provider ({@code TrainingLauncher.launch})
@@ -20,6 +22,15 @@ import org.springframework.stereotype.Component;
 public class TrainingLaunchOrchestrator implements TrainingLaunchUseCases {
 
     private static final Logger log = LoggerFactory.getLogger(TrainingLaunchOrchestrator.class);
+
+    /**
+     * Serializa los {@code prepareLaunch}: la transacción comita (el training queda QUEUED, es
+     * decir, contando como run activo) antes de soltar el candado, así que dos lanzamientos
+     * concurrentes no pueden pasar a la vez los cupos de {@code assertLaunchCapacity}. Vale
+     * porque el backend es un monolito de una sola instancia; la llamada al provider (lenta)
+     * queda fuera del candado.
+     */
+    private final ReentrantLock launchLock = new ReentrantLock();
 
     private final TrainingLaunchService launchService;
     private final TrainingLauncher launcher;
@@ -34,7 +45,13 @@ public class TrainingLaunchOrchestrator implements TrainingLaunchUseCases {
 
     @Override
     public Training launch(Long userId, Long trainingId, String embeddingModel) {
-        TrainingLaunchCommand command = launchService.prepareLaunch(trainingId, userId, embeddingModel);
+        TrainingLaunchCommand command;
+        launchLock.lock();
+        try {
+            command = launchService.prepareLaunch(trainingId, userId, embeddingModel);
+        } finally {
+            launchLock.unlock();
+        }
         try {
             String instanceId = launcher.launch(command);
             launchService.markLaunched(trainingId, instanceId);

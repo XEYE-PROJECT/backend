@@ -167,6 +167,7 @@ public class TrainingService implements TrainingUseCases, TrainingLaunchService,
         }
         // Fallar antes de tocar la BD: un lanzamiento rechazado no debe dejar una fila pendiente huérfana.
         resolveEmbeddingModel(embeddingModel);
+        assertLaunchCapacity(listId);
         if (elements.findByListId(listId).isEmpty()) {
             throw new BadRequestException("The list has no elements to train");
         }
@@ -183,6 +184,7 @@ public class TrainingService implements TrainingUseCases, TrainingLaunchService,
             throw new ConflictException("Only a pending training can be launched");
         }
         Long listId = training.listId();
+        assertLaunchCapacity(listId);
         ItemList list = lists.findById(listId)
                 .orElseThrow(() -> new NotFoundException("List not found"));
         List<Element> listElements = elements.findByListId(listId);
@@ -213,6 +215,23 @@ public class TrainingService implements TrainingUseCases, TrainingLaunchService,
                 properties.callbackUrl(), properties.webhookSecret(),
                 new TrainingLaunchCommand.ListPayload(list.id(), list.name(), list.description()),
                 payload, options);
+    }
+
+    /**
+     * Reglas de admisión de un lanzamiento: la lista no puede tener otro run sin terminar, y el
+     * total de runs del backend no puede superar {@code xeye.training.max-concurrent} (cada run
+     * es un contenedor worker; el tope evita saturar la máquina). El orquestador serializa los
+     * lanzamientos, así que dos peticiones concurrentes no pueden colarse por el mismo hueco.
+     */
+    private void assertLaunchCapacity(Long listId) {
+        if (trainings.existsRunningByListId(listId)) {
+            throw new ConflictException("The list already has a training in progress");
+        }
+        int max = properties.maxConcurrent();
+        if (max > 0 && trainings.countRunning() >= max) {
+            throw new ConflictException("The maximum number of concurrent trainings (" + max
+                    + ") has been reached; try again when one finishes");
+        }
     }
 
     private String resolveEmbeddingModel(String requested) {

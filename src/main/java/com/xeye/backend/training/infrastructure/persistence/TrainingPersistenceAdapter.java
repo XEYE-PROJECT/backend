@@ -73,6 +73,16 @@ public class TrainingPersistenceAdapter implements TrainingRepository {
     }
 
     @Override
+    public boolean existsRunningByListId(Long listId) {
+        return jpa.existsByListIdAndStatusIn(listId, RUNNING_STATUSES);
+    }
+
+    @Override
+    public long countRunning() {
+        return jpa.countByStatusIn(RUNNING_STATUSES);
+    }
+
+    @Override
     public Training save(Training training) {
         return toDomain(jpa.save(toEntity(training)));
     }

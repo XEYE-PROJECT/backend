@@ -51,6 +51,13 @@
 			<artifactId>spring-boot-starter-security</artifactId>
 		</dependency>
 
+		<!-- Actuator: /actuator/health (SecurityConfig already permits it; the docker
+		     healthcheck and the deploy gating probe it) -->
+		<dependency>
+			<groupId>org.springframework.boot</groupId>
+			<artifactId>spring-boot-starter-actuator</artifactId>
+		</dependency>
+
 		<!-- JWT (access tokens) -->
 		<dependency>
 			<groupId>io.jsonwebtoken</groupId>

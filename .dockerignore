@@ -5,3 +5,7 @@ target
 .vscode
 HELP.md
 *.log
+.env
+.env.*
+.github
+.claude

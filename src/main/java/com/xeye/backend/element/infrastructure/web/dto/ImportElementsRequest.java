@@ -13,7 +13,7 @@ import java.util.List;
  * cadena opaca de {@link CreateElementRequest}.
  */
 public record ImportElementsRequest(
-        @NotEmpty @Size(max = 1000) List<@Valid Item> elements) {
+        @NotEmpty @Size(max = 10000) List<@Valid Item> elements) {
 
     public record Item(
             @NotBlank String text,

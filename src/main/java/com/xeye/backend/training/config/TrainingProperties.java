@@ -23,7 +23,6 @@ public record TrainingProperties(
          *  con 409. {@code <= 0} desactiva el límite. */
         int maxConcurrent,
         Docker docker,
-        Lambda lambda,
         RunPod runpod) {
 
     public String callbackUrl() {
@@ -46,13 +45,6 @@ public record TrainingProperties(
      */
     public record Docker(String image, String inputDir, String hostInputDir, String network,
                          List<String> env, String gpus, String dockerBinary) {
-    }
-
-    /**
-     * AWS Lambda ({@code provider=lambda}). Se invoca en asíncrono (InvocationType=Event) con
-     * el job como evento, así que ningún hilo de petición espera a la ejecución.
-     */
-    public record Lambda(String functionName, String region) {
     }
 
     public record RunPod(String apiKey, String endpointId, int timeoutSeconds) {

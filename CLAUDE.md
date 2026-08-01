@@ -82,7 +82,7 @@ Trigger → pending → launch (user) → callback → activate. All wiring live
    a worker container eating CPU/GPU/RAM. The orchestrator serializes `prepareLaunch` behind a
    `ReentrantLock` (single-instance monolith) so concurrent launches can't race past the caps;
    a failed/stalled run frees its slot (`markFailed` / `TrainingStalledSweeper`).
-3. **Provider** (`xeye.training.provider`). All four send the *same* job payload
+3. **Provider** (`xeye.training.provider`). All three send the *same* job payload
    (`TrainingLaunchCommand`, whose component names are snake_case **on purpose** — the Python
    worker reads them literally) and answer on the same webhook; they differ only in where the
    container runs:
@@ -95,8 +95,6 @@ Trigger → pending → launch (user) → callback → activate. All wiring live
      `all`) and **retries once without it** if the daemon cannot provide a GPU — the GPU is used
      whenever possible, never a reason to fail a training. Only the CUDA image (`Dockerfile.gpu`)
      can actually use it; the launcher always overrides the CMD with the one-shot entrypoint.
-   - `lambda`: `LambdaTrainingLauncher` invokes an AWS Lambda container function **asynchronously**
-     (`InvocationType=Event`), so no request thread waits on the 15-min execution wall.
    - `runpod`: `RunPodTrainingLauncher` POSTs `https://api.runpod.ai/v2/{endpointId}/run`.
 4. **Callback.** `POST /webhooks/training-update` (`TrainingWebhookController`, `X-Webhook-Token`
    header) → `TrainingService.applyUpdate`. On `completed`: set embeddings/model/time/cost, cache the
@@ -171,7 +169,7 @@ Hot reload: DevTools watches `target/classes`. Saving a file in an IDE that auto
 ## Configuration (`application.yml`, all overridable by env var)
 
 `xeye.jwt.{secret,expiration-minutes,issuer}`, `xeye.cors.allowed-origins`,
-`xeye.training.{provider,webhook-secret,callback-base-url,mock-delay-ms,embedding-models,stalled-after-minutes,max-concurrent,docker.*,lambda.*,runpod.*}`,
+`xeye.training.{provider,webhook-secret,callback-base-url,mock-delay-ms,embedding-models,stalled-after-minutes,max-concurrent,docker.*,runpod.*}`,
 `xeye.search.{provider,url,internal-service-name,internal-token}` (`SearchProperties` lives in
 `shared/config` — the `training` and `search` modules both use it),
 `DB_URL/DB_USERNAME/DB_PASSWORD`, `SERVER_PORT`.
@@ -205,7 +203,7 @@ Authenticated (`Authorization: Bearer <jwt>`):
 `../search-service` (**the** search microservice, rebuilt Python/FastAPI, :8002 — see its
 README.md; `../XEYE-search-service` is the legacy version it replaces),
 `../training-service` (**the** training worker, rebuilt: one container per training, runs on
-docker/Lambda/RunPod/Batch — see its README.md; `../XEYE-training-service` is the legacy version),
+docker/RunPod — see its README.md; `../XEYE-training-service` is the legacy version),
 `../XEYE-frontend` (Vue, legacy), `../frontend` (Nuxt, current), `../XEYE-traefik`.
 There is no Java test suite for HTTP flows; verify by running the app and driving the endpoints
 (both Python services have their own pytest suites).

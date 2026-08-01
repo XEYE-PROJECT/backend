@@ -43,7 +43,7 @@ class TrainingServiceLaunchGuardTest {
     private TrainingService service(int maxConcurrent) {
         TrainingProperties properties = new TrainingProperties(
                 "mock", "secret", "http://localhost:8000", 0,
-                List.of("model-a", "model-b"), 30, maxConcurrent, null, null, null);
+                List.of("model-a", "model-b"), 30, maxConcurrent, null, null);
         return new TrainingService(trainings, lists, elements, searchIndexer, properties);
     }
 

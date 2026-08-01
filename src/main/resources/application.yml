@@ -38,8 +38,6 @@ xeye:
     # el mismo webhook — solo cambia *dónde* corre el contenedor.
     #   mock   -> simula la finalización en el propio proceso (sin servicios externos)
     #   docker -> un contenedor local por training (`docker run`, imagen del training-service)
-    #   lambda -> invocación asíncrona de una Lambda contenedor (solo CPU, tope de 15 min:
-    #             usarlo con ENRICHER=groq|gemini|none en el worker)
     #   runpod -> POST del job a un endpoint Serverless de RunPod (GPU: el montaje con LLM local)
     provider: ${TRAINING_PROVIDER:mock}
     webhook-secret: ${TRAINING_WEBHOOK_SECRET:dev-webhook-secret}
@@ -71,9 +69,6 @@ xeye:
       # CPU, así que "all" es seguro en cualquier máquina. Vacío fuerza CPU.
       gpus: ${TRAINING_DOCKER_GPUS:all}
       docker-binary: ${TRAINING_DOCKER_BINARY:docker}
-    lambda:
-      function-name: ${TRAINING_LAMBDA_FUNCTION:}
-      region: ${AWS_REGION:}
     runpod:
       api-key: ${RUNPOD_API_KEY:}
       endpoint-id: ${RUNPOD_ENDPOINT_ID:}

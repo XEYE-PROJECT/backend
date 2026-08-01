@@ -7,7 +7,7 @@ import java.util.List;
 
 /**
  * Todo lo que el worker de training necesita para ejecutar un job. Este record ES el formato
- * de red: docker/lambda lo serializan tal cual y RunPod copia las mismas claves en su objeto
+ * de red: docker lo serializa tal cual y RunPod copia las mismas claves en su objeto
  * {@code input}. De ahí los nombres en snake_case — el worker (Python) los lee literalmente,
  * así que renombrar un componente rompe en silencio todos los providers.
  */

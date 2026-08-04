@@ -22,7 +22,9 @@ public record TrainingWebhookRequest(
         TimePayload time,
         CostPayload cost,
         /** Id de elemento (clave JSON, de ahí String) -> enriquecimiento LLM del worker. */
-        @JsonProperty("generated_descriptions") Map<String, String> generatedDescriptions) {
+        @JsonProperty("generated_descriptions") Map<String, String> generatedDescriptions,
+        /** Elementos con descripción LLM (caché + generadas) al calcular los embeddings. */
+        @JsonProperty("described_count") Integer describedCount) {
 
     public record TimePayload(
             @JsonProperty("optimizing_seconds") Long optimizingSeconds,
@@ -30,6 +32,7 @@ public record TrainingWebhookRequest(
             @JsonProperty("total_seconds") Long totalSeconds) {
     }
 
+    /** El worker solo reporta cómputo; el precio (fijo + descripciones) ya lo fijó el backend al lanzar. */
     public record CostPayload(Double runpod, Double total) {
     }
 
@@ -37,9 +40,9 @@ public record TrainingWebhookRequest(
         TrainingTime trainingTime = time == null ? null
                 : new TrainingTime(time.optimizingSeconds(), time.trainingSeconds(), time.totalSeconds());
         TrainingCost trainingCost = cost == null ? null
-                : new TrainingCost(cost.runpod(), cost.total());
+                : new TrainingCost(cost.runpod(), null, null, cost.total());
         return new TrainingUpdateCommand(trainingId, status, embeddingsData, model, trainingTime, trainingCost,
-                error, parseGeneratedDescriptions());
+                error, parseGeneratedDescriptions(), describedCount);
     }
 
     /** Omite las entradas cuya clave no es numérica en vez de fallar el callback entero. */

@@ -10,6 +10,8 @@ import java.util.Map;
  * {@code status} es un string crudo ("optimizing"/"training"/"completed"/"failed").
  * {@code generatedDescriptions} (id de elemento -> enriquecimiento LLM del worker) solo llega
  * al completar y se cachea en los elementos para que el siguiente training no repita ese trabajo.
+ * {@code describedCount} = elementos con descripción LLM (caché + generadas) al calcular los
+ * embeddings; puede ser menor que los elementos del run si el LLM falló en algunos.
  */
 public record TrainingUpdateCommand(
         Long trainingId,
@@ -19,5 +21,6 @@ public record TrainingUpdateCommand(
         TrainingTime time,
         TrainingCost cost,
         String error,
-        Map<Long, String> generatedDescriptions) {
+        Map<Long, String> generatedDescriptions,
+        Integer describedCount) {
 }

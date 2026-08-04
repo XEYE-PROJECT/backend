@@ -59,9 +59,13 @@ public class MockTrainingLauncher implements TrainingLauncher {
         String model = "{\"embedding_model\":\"mock\",\"llm_model\":null,\"list_id\":" + command.listId() + "}";
         String embeddings = Base64.getEncoder()
                 .encodeToString(("mock-embeddings-list-" + command.listId()).getBytes(StandardCharsets.UTF_8));
+        // Como el worker real sin LLM: no genera nada, así que las descritas son las ya cacheadas.
+        int described = (int) command.elements().stream()
+                .filter(element -> element.generatedDescription() != null)
+                .count();
         TrainingUpdateCommand update = new TrainingUpdateCommand(
                 command.trainingId(), "completed", embeddings, model,
-                new TrainingTime(0L, 0L, 0L), new TrainingCost(0.0, 0.0), null, Map.of());
+                new TrainingTime(0L, 0L, 0L), new TrainingCost(0.0, null, null, 0.0), null, Map.of(), described);
         try {
             completionHandler.applyUpdate(update);
             log.info("[mock] completed training {}", command.trainingId());

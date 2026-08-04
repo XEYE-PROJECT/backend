@@ -101,6 +101,7 @@ public class TrainingPersistenceAdapter implements TrainingRepository {
                 TrainingStatus.fromString(entity.getStatus()),
                 readJson(entity.getOptions(), OPTION_LIST),
                 readJson(entity.getElementIds(), ID_LIST),
+                entity.getDescribedCount(),
                 entity.getEmbeddingsData(),
                 entity.getModel(),
                 readJson(entity.getTime(), TrainingTime.class),
@@ -120,6 +121,7 @@ public class TrainingPersistenceAdapter implements TrainingRepository {
         entity.setStatus(training.status().value());
         entity.setOptions(writeJson(training.options()));
         entity.setElementIds(writeJson(training.elementIds()));
+        entity.setDescribedCount(training.describedCount());
         entity.setEmbeddingsData(training.embeddingsData());
         entity.setModel(training.model());
         entity.setTime(writeJson(training.time()));

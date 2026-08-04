@@ -18,6 +18,7 @@ import com.xeye.backend.training.application.port.out.SearchIndexer;
 import com.xeye.backend.training.application.port.out.TrainingRepository;
 import com.xeye.backend.training.config.TrainingProperties;
 import com.xeye.backend.training.domain.model.Training;
+import com.xeye.backend.training.domain.model.TrainingCost;
 import com.xeye.backend.training.domain.model.TrainingOption;
 import com.xeye.backend.training.domain.model.TrainingStatus;
 import org.slf4j.Logger;
@@ -99,6 +100,35 @@ public class TrainingService implements TrainingUseCases, TrainingLaunchService,
         return activated;
     }
 
+    @Override
+    @Transactional(readOnly = true)
+    public CostEstimate estimateCost(Long userId, Long listId, boolean regenerateDescriptions) {
+        ItemList list = lists.findById(listId)
+                .orElseThrow(() -> new NotFoundException("List not found"));
+        if (!list.userId().equals(userId)) {
+            throw new NotFoundException("List not found");
+        }
+        return presetCost(elements.findByListId(listId), regenerateDescriptions);
+    }
+
+    /**
+     * Precio preestablecido de entrenar estos elementos ahora mismo: el fijo por entrenamiento
+     * más uno por cada descripción LLM a generar (los elementos sin enriquecimiento cacheado,
+     * o todos si el usuario pide regenerarlas).
+     * El backend es la única fuente de precios: esto mismo se fija en el training al lanzarlo.
+     */
+    private CostEstimate presetCost(List<Element> listElements, boolean regenerateDescriptions) {
+        int descriptionsToGenerate = regenerateDescriptions
+                ? listElements.size()
+                : (int) listElements.stream()
+                        .filter(element -> element.generatedDescription() == null)
+                        .count();
+        TrainingProperties.Pricing pricing = properties.pricing();
+        double fixed = Math.max(0, pricing.fixed());
+        double enrichment = descriptionsToGenerate * Math.max(0, pricing.perDescription());
+        return new CostEstimate(descriptionsToGenerate, fixed, enrichment, fixed + enrichment);
+    }
+
     private Set<Long> currentElementIds(Long listId) {
         return elements.findByListId(listId).stream().map(Element::id).collect(Collectors.toSet());
     }
@@ -177,7 +207,8 @@ public class TrainingService implements TrainingUseCases, TrainingLaunchService,
 
     @Override
     @Transactional
-    public TrainingLaunchCommand prepareLaunch(Long trainingId, Long userId, String embeddingModel) {
+    public TrainingLaunchCommand prepareLaunch(Long trainingId, Long userId, String embeddingModel,
+                                               boolean regenerateDescriptions) {
         Training training = trainings.findByIdAndUserId(trainingId, userId)
                 .orElseThrow(() -> new NotFoundException("Training not found"));
         if (training.status() != TrainingStatus.PENDING) {
@@ -192,15 +223,20 @@ public class TrainingService implements TrainingUseCases, TrainingLaunchService,
             throw new BadRequestException("The list has no elements to train");
         }
 
+        // force_enrich es la opción que el worker ya entiende (steps/enrich.py): con ella ignora
+        // el enriquecimiento cacheado y regenera las descripciones LLM de todos los elementos,
+        // devolviéndolas en el webhook (que las re-cachea).
         List<TrainingOption> options = List.of(
                 new TrainingOption("train_all", true),
-                new TrainingOption("embedding_model", resolveEmbeddingModel(embeddingModel)));
+                new TrainingOption("embedding_model", resolveEmbeddingModel(embeddingModel)),
+                new TrainingOption("force_enrich", regenerateDescriptions));
         training.markQueued(options);
         // Se reentrena la lista entera, así que nada está "entrenado" hasta que complete.
         elements.markAllTrained(listId, false);
 
         // generatedDescription viaja con cada elemento: es la salida LLM previa del worker y es
-        // null justo en los elementos cuyo texto/descripción cambió — solo esos pagan el LLM.
+        // null justo en los elementos cuyo texto/descripción cambió — solo esos pagan el LLM
+        // (todos, si force_enrich).
         List<TrainingLaunchCommand.ElementPayload> payload = listElements.stream()
                 .map(e -> new TrainingLaunchCommand.ElementPayload(
                         e.id(), e.text(), e.description(), e.generatedDescription(), e.trained()))
@@ -208,6 +244,10 @@ public class TrainingService implements TrainingUseCases, TrainingLaunchService,
         // Guardamos qué elementos (id ASC) embebará el worker: búsqueda alinea las filas de
         // embeddings con estos ids, sobreviviendo a ediciones concurrentes.
         training.recordElementIds(payload.stream().map(TrainingLaunchCommand.ElementPayload::id).toList());
+        // El precio queda fijado aquí, antes de que el worker toque nada: al completar solo se
+        // le suma el coste de cómputo reportado.
+        CostEstimate preset = presetCost(listElements, regenerateDescriptions);
+        training.priceAtLaunch(new TrainingCost(null, preset.fixed(), preset.enrichment(), preset.total()));
         trainings.save(training);
 
         return new TrainingLaunchCommand(
@@ -314,7 +354,12 @@ public class TrainingService implements TrainingUseCases, TrainingLaunchService,
             log.debug("Cached {} LLM enrichments for list {}", update.generatedDescriptions().size(), listId);
         }
         elements.markAllTrained(listId, true);
-        training.markCompleted(update.embeddingsData(), update.model(), update.time(), update.cost());
+        // El enriquecimiento se cobra por lo realmente generado: el worker tolera fallos del LLM
+        // por elemento, así que pueden volver menos descripciones de las estimadas al lanzar.
+        int generated = update.generatedDescriptions() == null ? 0 : update.generatedDescriptions().size();
+        double enrichmentCost = Math.round(generated * Math.max(0, properties.pricing().perDescription()) * 1e6) / 1e6;
+        training.markCompleted(update.embeddingsData(), update.model(), update.time(), update.cost(),
+                enrichmentCost, update.describedCount());
         trainings.save(training);
         pushToSearch(training);
         log.info("Training {} completed for list {}", training.id(), listId);

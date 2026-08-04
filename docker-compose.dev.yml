@@ -55,6 +55,9 @@ services:
       TRAINING_PROVIDER: ${TRAINING_PROVIDER:-mock}
       TRAINING_WEBHOOK_SECRET: ${TRAINING_WEBHOOK_SECRET:-dev-webhook-secret}
       TRAINING_MAX_CONCURRENT: ${TRAINING_MAX_CONCURRENT:-1}
+      # Precio preestablecido de un entrenamiento, en EUR: fijo + por descripción LLM a generar.
+      TRAINING_FIXED_PRICE: ${TRAINING_FIXED_PRICE:-0.1}
+      TRAINING_PRICE_PER_DESCRIPTION: ${TRAINING_PRICE_PER_DESCRIPTION:-0.0053}
       BACKEND_URL: ${BACKEND_URL:-http://localhost:8000}
       TRAINING_DOCKER_IMAGE: ${TRAINING_DOCKER_IMAGE:-xeye-training-service:latest}
       # El JSON del job se escribe aquí y se monta en el worker desde la ruta del host

@@ -32,9 +32,13 @@ public interface TrainingLaunchService {
      * Rechaza con 409 si la lista ya tiene un run sin terminar o si el backend está al tope
      * global de {@code xeye.training.max-concurrent} runs.
      *
-     * @param embeddingModel uno de los modelos configurados, o null para el por defecto
+     * @param embeddingModel         uno de los modelos configurados, o null para el por defecto
+     * @param regenerateDescriptions true = pedir al worker (opción {@code force_enrich}) que
+     *                               ignore el enriquecimiento cacheado y regenere las
+     *                               descripciones LLM de todos los elementos
      */
-    TrainingLaunchCommand prepareLaunch(Long trainingId, Long userId, String embeddingModel);
+    TrainingLaunchCommand prepareLaunch(Long trainingId, Long userId, String embeddingModel,
+                                        boolean regenerateDescriptions);
 
     void markLaunched(Long trainingId, String instanceId);
 

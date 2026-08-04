@@ -28,7 +28,7 @@ class TrainingStatusTest {
     void completingMarksInUse() {
         Training training = Training.pending(1L, 1L);
         training.markQueued(null);
-        training.markCompleted("emb", "model", null, null);
+        training.markCompleted("emb", "model", null, null, null, null);
         assertEquals(TrainingStatus.COMPLETED, training.status());
         assertEquals(true, training.inUse());
     }

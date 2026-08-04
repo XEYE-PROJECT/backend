@@ -54,6 +54,12 @@ xeye:
     stalled-after-minutes: ${TRAINING_STALLED_AFTER_MINUTES:30}
     # Máximo de trainings corriendo a la vez en todo el backend
     max-concurrent: ${TRAINING_MAX_CONCURRENT:1}
+    # Precio preestablecido de un entrenamiento, en EUR: fijo + por descripción LLM a generar.
+    # El por-descripción por defecto sale de facturación real de Gemini (tarifa Lote,
+    # pensamiento incluido): 995 descripciones ~ 5,24 EUR -> ~0,0053 EUR/descripción.
+    pricing:
+      fixed: ${TRAINING_FIXED_PRICE:0.3}
+      per-description: ${TRAINING_PRICE_PER_DESCRIPTION:0.0053}
     docker:
       image: ${TRAINING_DOCKER_IMAGE:xeye-training-service:latest}
       # Dónde escribimos el JSON del job, y ese mismo directorio tal como lo ve el daemon de

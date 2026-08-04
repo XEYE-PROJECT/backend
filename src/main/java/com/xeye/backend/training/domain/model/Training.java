@@ -19,6 +19,8 @@ public class Training {
     private List<TrainingOption> options;
     /** Ids de elementos (ASC) capturados al lanzar: la fila i de la matriz de embeddings es de elementIds[i]. */
     private List<Long> elementIds;
+    /** Elementos con descripción LLM (caché + generadas) al calcular los embeddings; puede ser < elementIds.size(). */
+    private Integer describedCount;
     private String embeddingsData;
     private String model;
     private TrainingTime time;
@@ -29,9 +31,9 @@ public class Training {
     private final Instant updatedAt;
 
     public Training(Long id, Long listId, Long userId, String instanceId, TrainingStatus status,
-                    List<TrainingOption> options, List<Long> elementIds, String embeddingsData, String model,
-                    TrainingTime time, TrainingCost cost, String error, boolean inUse,
-                    Instant createdAt, Instant updatedAt) {
+                    List<TrainingOption> options, List<Long> elementIds, Integer describedCount,
+                    String embeddingsData, String model, TrainingTime time, TrainingCost cost,
+                    String error, boolean inUse, Instant createdAt, Instant updatedAt) {
         this.id = id;
         this.listId = Objects.requireNonNull(listId, "listId");
         this.userId = Objects.requireNonNull(userId, "userId");
@@ -39,6 +41,7 @@ public class Training {
         this.status = Objects.requireNonNull(status, "status");
         this.options = options;
         this.elementIds = elementIds;
+        this.describedCount = describedCount;
         this.embeddingsData = embeddingsData;
         this.model = model;
         this.time = time;
@@ -52,7 +55,7 @@ public class Training {
     /** Hubo una edición: la lista necesita reentrenar, pero el usuario decide cuándo (y con qué modelo). */
     public static Training pending(Long listId, Long userId) {
         return new Training(null, listId, userId, null, TrainingStatus.PENDING, null,
-                null, null, null, null, null, null, false, null, null);
+                null, null, null, null, null, null, null, false, null, null);
     }
 
     /** El usuario lanza este training pendiente; las opciones fijan el run (modelo, train_all…). */
@@ -64,6 +67,11 @@ public class Training {
     /** Captura el conjunto de elementos en el lanzamiento (el orden de filas de la matriz de embeddings). */
     public void recordElementIds(List<Long> elementIds) {
         this.elementIds = elementIds;
+    }
+
+    /** Fija el precio preestablecido del run (fijo + descripciones a generar) al lanzarlo. */
+    public void priceAtLaunch(TrainingCost cost) {
+        this.cost = cost;
     }
 
     public void markLaunched(String instanceId) {
@@ -79,12 +87,14 @@ public class Training {
         this.status = TrainingStatus.TRAINING;
     }
 
-    public void markCompleted(String embeddingsData, String model, TrainingTime time, TrainingCost cost) {
+    public void markCompleted(String embeddingsData, String model, TrainingTime time, TrainingCost reportedCost,
+                              Double actualEnrichmentCost, Integer describedCount) {
         this.status = TrainingStatus.COMPLETED;
         this.embeddingsData = embeddingsData;
         this.model = model;
         this.time = time;
-        this.cost = cost;
+        this.describedCount = describedCount;
+        this.cost = mergeCost(this.cost, reportedCost, actualEnrichmentCost);
         this.error = null;
         this.inUse = true;
     }
@@ -93,6 +103,26 @@ public class Training {
         this.status = TrainingStatus.FAILED;
         this.error = error;
         this.inUse = false;
+        this.cost = null; // un entrenamiento fallido no se cobra
+    }
+
+    /**
+     * El precio fijo lo preestablece el backend al lanzar; el de enriquecimiento se ajusta al
+     * completar a las descripciones realmente generadas ({@code actualEnrichmentCost}): el worker
+     * tolera fallos del LLM por elemento, así que puede devolver menos de las estimadas. Del
+     * worker solo se toma el coste de cómputo. Sin precio preestablecido (trainings antiguos o el
+     * flujo mock sin lanzamiento) vale lo que reporte el worker.
+     */
+    private static TrainingCost mergeCost(TrainingCost preset, TrainingCost reported, Double actualEnrichmentCost) {
+        if (preset == null) {
+            return reported;
+        }
+        double runpod = reported == null || reported.runpod() == null ? 0.0 : reported.runpod();
+        double fixed = preset.fixed() == null ? 0.0 : preset.fixed();
+        double enrichment = actualEnrichmentCost != null ? actualEnrichmentCost
+                : preset.enrichment() == null ? 0.0 : preset.enrichment();
+        double total = Math.round((runpod + fixed + enrichment) * 1e6) / 1e6;
+        return new TrainingCost(runpod, fixed, enrichment, total);
     }
 
     /** El usuario elige este training completado como el modelo activo de la lista. */
@@ -130,6 +160,10 @@ public class Training {
 
     public List<Long> elementIds() {
         return elementIds;
+    }
+
+    public Integer describedCount() {
+        return describedCount;
     }
 
     public String embeddingsData() {

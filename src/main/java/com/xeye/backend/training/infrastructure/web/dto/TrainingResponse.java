@@ -17,6 +17,8 @@ public record TrainingResponse(
         String status,
         List<TrainingOption> options,
         Integer elementCount,
+        /** Elementos con descripción LLM al calcular los embeddings (null en trainings antiguos). */
+        Integer describedCount,
         String model,
         TrainingTime time,
         TrainingCost cost,
@@ -40,6 +42,7 @@ public record TrainingResponse(
                 training.status().value(),
                 training.options(),
                 training.elementIds() == null ? null : training.elementIds().size(),
+                training.describedCount(),
                 training.model(),
                 training.time(),
                 training.cost(),

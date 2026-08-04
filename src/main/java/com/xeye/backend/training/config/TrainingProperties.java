@@ -22,6 +22,7 @@ public record TrainingProperties(
          *  máquina que ejecuta los workers; los lanzamientos que lo superarían se rechazan
          *  con 409. {@code <= 0} desactiva el límite. */
         int maxConcurrent,
+        Pricing pricing,
         Docker docker,
         RunPod runpod) {
 
@@ -48,5 +49,16 @@ public record TrainingProperties(
     }
 
     public record RunPod(String apiKey, String endpointId, int timeoutSeconds) {
+    }
+
+    /**
+     * Precio preestablecido de un entrenamiento (única fuente de precios del sistema): un fijo
+     * por entrenamiento más un precio por cada descripción LLM a generar (elementos sin caché).
+     * Se estima con él antes de lanzar y se fija en la fila del training al lanzar.
+     *
+     * @param fixed          EUR por entrenamiento, se generen o no descripciones
+     * @param perDescription EUR por descripción a generar (derivado de la tarifa real del LLM)
+     */
+    public record Pricing(double fixed, double perDescription) {
     }
 }

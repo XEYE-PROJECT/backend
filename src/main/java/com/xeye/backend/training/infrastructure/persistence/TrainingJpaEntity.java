@@ -42,6 +42,9 @@ public class TrainingJpaEntity {
     @Column(name = "element_ids", columnDefinition = "json")
     private String elementIds;
 
+    @Column(name = "described_count")
+    private Integer describedCount;
+
     @Column(name = "embeddings_data", columnDefinition = "longtext")
     private String embeddingsData;
 
@@ -125,6 +128,14 @@ public class TrainingJpaEntity {
 
     public void setElementIds(String elementIds) {
         this.elementIds = elementIds;
+    }
+
+    public Integer getDescribedCount() {
+        return describedCount;
+    }
+
+    public void setDescribedCount(Integer describedCount) {
+        this.describedCount = describedCount;
     }
 
     public String getEmbeddingsData() {

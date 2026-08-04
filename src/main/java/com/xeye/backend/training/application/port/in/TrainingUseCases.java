@@ -23,4 +23,15 @@ public interface TrainingUseCases {
 
     /** Trainings PENDING del usuario en todas sus listas (alimenta los avisos de la UI). */
     List<Training> pendingForUser(Long userId);
+
+    /**
+     * Precio preestablecido de lanzar un entrenamiento de la lista ahora mismo: el fijo por
+     * entrenamiento más el precio por cada descripción LLM que habría que generar (elementos
+     * sin enriquecimiento cacheado, o todos si {@code regenerateDescriptions}).
+     */
+    CostEstimate estimateCost(Long userId, Long listId, boolean regenerateDescriptions);
+
+    /** Desglose de la estimación; {@code total = fixed + enrichment}. */
+    record CostEstimate(int descriptionsToGenerate, double fixed, double enrichment, double total) {
+    }
 }

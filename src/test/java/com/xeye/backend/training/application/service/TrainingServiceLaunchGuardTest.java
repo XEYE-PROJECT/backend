@@ -59,7 +59,7 @@ class TrainingServiceLaunchGuardTest {
         when(trainings.existsRunningByListId(LIST_ID)).thenReturn(true);
 
         ConflictException ex = assertThrows(ConflictException.class,
-                () -> service(5).prepareLaunch(TRAINING_ID, USER_ID, null, false));
+                () -> service(5).prepareLaunch(TRAINING_ID, USER_ID, null, false, false));
 
         assertTrue(ex.getMessage().contains("already has a training in progress"));
         verify(trainings, never()).save(any());
@@ -72,7 +72,7 @@ class TrainingServiceLaunchGuardTest {
         when(trainings.countRunning()).thenReturn(2L);
 
         ConflictException ex = assertThrows(ConflictException.class,
-                () -> service(2).prepareLaunch(TRAINING_ID, USER_ID, null, false));
+                () -> service(2).prepareLaunch(TRAINING_ID, USER_ID, null, false, false));
 
         assertTrue(ex.getMessage().contains("maximum number of concurrent trainings (2)"));
         verify(trainings, never()).save(any());
@@ -88,7 +88,7 @@ class TrainingServiceLaunchGuardTest {
         when(elements.findByListId(LIST_ID)).thenReturn(List.of(
                 new Element(21L, LIST_ID, "text", null, null, null, true, null, null)));
 
-        TrainingLaunchCommand command = service(2).prepareLaunch(TRAINING_ID, USER_ID, "model-b", false);
+        TrainingLaunchCommand command = service(2).prepareLaunch(TRAINING_ID, USER_ID, "model-b", false, false);
 
         assertEquals(TRAINING_ID, command.trainingId());
         assertEquals(LIST_ID, command.listId());
@@ -104,7 +104,7 @@ class TrainingServiceLaunchGuardTest {
         when(elements.findByListId(LIST_ID)).thenReturn(List.of(
                 new Element(21L, LIST_ID, "text", null, null, null, true, null, null)));
 
-        service(0).prepareLaunch(TRAINING_ID, USER_ID, null, false);
+        service(0).prepareLaunch(TRAINING_ID, USER_ID, null, false, false);
 
         verify(trainings, never()).countRunning();
     }

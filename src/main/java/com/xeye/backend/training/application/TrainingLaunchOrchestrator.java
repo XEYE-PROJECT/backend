@@ -44,11 +44,13 @@ public class TrainingLaunchOrchestrator implements TrainingLaunchUseCases {
     }
 
     @Override
-    public Training launch(Long userId, Long trainingId, String embeddingModel, boolean regenerateDescriptions) {
+    public Training launch(Long userId, Long trainingId, String embeddingModel,
+                           boolean regenerateDescriptions, boolean noDescriptions) {
         TrainingLaunchCommand command;
         launchLock.lock();
         try {
-            command = launchService.prepareLaunch(trainingId, userId, embeddingModel, regenerateDescriptions);
+            command = launchService.prepareLaunch(trainingId, userId, embeddingModel,
+                    regenerateDescriptions, noDescriptions);
         } finally {
             launchLock.unlock();
         }
@@ -67,7 +69,8 @@ public class TrainingLaunchOrchestrator implements TrainingLaunchUseCases {
     }
 
     @Override
-    public Training retrain(Long userId, Long listId, String embeddingModel, boolean regenerateDescriptions) {
+    public Training retrain(Long userId, Long listId, String embeddingModel,
+                            boolean regenerateDescriptions, boolean noDescriptions) {
         Training pending;
         try {
             pending = launchService.ensurePendingForLaunch(listId, userId, embeddingModel);
@@ -75,6 +78,6 @@ public class TrainingLaunchOrchestrator implements TrainingLaunchUseCases {
             // Una edición concurrente creó antes la fila pendiente; se reutiliza la ganadora.
             pending = launchService.ensurePendingForLaunch(listId, userId, embeddingModel);
         }
-        return launch(userId, pending.id(), embeddingModel, regenerateDescriptions);
+        return launch(userId, pending.id(), embeddingModel, regenerateDescriptions, noDescriptions);
     }
 }

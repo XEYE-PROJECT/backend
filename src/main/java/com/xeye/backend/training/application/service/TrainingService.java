@@ -102,27 +102,31 @@ public class TrainingService implements TrainingUseCases, TrainingLaunchService,
 
     @Override
     @Transactional(readOnly = true)
-    public CostEstimate estimateCost(Long userId, Long listId, boolean regenerateDescriptions) {
+    public CostEstimate estimateCost(Long userId, Long listId, boolean regenerateDescriptions,
+                                     boolean noDescriptions) {
         ItemList list = lists.findById(listId)
                 .orElseThrow(() -> new NotFoundException("List not found"));
         if (!list.userId().equals(userId)) {
             throw new NotFoundException("List not found");
         }
-        return presetCost(elements.findByListId(listId), regenerateDescriptions);
+        return presetCost(elements.findByListId(listId), regenerateDescriptions, noDescriptions);
     }
 
     /**
      * Precio preestablecido de entrenar estos elementos ahora mismo: el fijo por entrenamiento
      * más uno por cada descripción LLM a generar (los elementos sin enriquecimiento cacheado,
-     * o todos si el usuario pide regenerarlas).
+     * o todos si el usuario pide regenerarlas; ninguna si entrena sin descripciones IA).
      * El backend es la única fuente de precios: esto mismo se fija en el training al lanzarlo.
      */
-    private CostEstimate presetCost(List<Element> listElements, boolean regenerateDescriptions) {
-        int descriptionsToGenerate = regenerateDescriptions
-                ? listElements.size()
-                : (int) listElements.stream()
-                        .filter(element -> element.generatedDescription() == null)
-                        .count();
+    private CostEstimate presetCost(List<Element> listElements, boolean regenerateDescriptions,
+                                    boolean noDescriptions) {
+        int descriptionsToGenerate = noDescriptions
+                ? 0
+                : regenerateDescriptions
+                        ? listElements.size()
+                        : (int) listElements.stream()
+                                .filter(element -> element.generatedDescription() == null)
+                                .count();
         TrainingProperties.Pricing pricing = properties.pricing();
         double fixed = Math.max(0, pricing.fixed());
         double enrichment = descriptionsToGenerate * Math.max(0, pricing.perDescription());
@@ -208,7 +212,7 @@ public class TrainingService implements TrainingUseCases, TrainingLaunchService,
     @Override
     @Transactional
     public TrainingLaunchCommand prepareLaunch(Long trainingId, Long userId, String embeddingModel,
-                                               boolean regenerateDescriptions) {
+                                               boolean regenerateDescriptions, boolean noDescriptions) {
         Training training = trainings.findByIdAndUserId(trainingId, userId)
                 .orElseThrow(() -> new NotFoundException("Training not found"));
         if (training.status() != TrainingStatus.PENDING) {
@@ -225,11 +229,18 @@ public class TrainingService implements TrainingUseCases, TrainingLaunchService,
 
         // force_enrich es la opción que el worker ya entiende (steps/enrich.py): con ella ignora
         // el enriquecimiento cacheado y regenera las descripciones LLM de todos los elementos,
-        // devolviéndolas en el webhook (que las re-cachea).
-        List<TrainingOption> options = List.of(
-                new TrainingOption("train_all", true),
-                new TrainingOption("embedding_model", resolveEmbeddingModel(embeddingModel)),
-                new TrainingOption("force_enrich", regenerateDescriptions));
+        // devolviéndolas en el webhook (que las re-cachea). Con noDescriptions se envía en su
+        // lugar strategy=embeddings_only (strategies.py: sin paso LLM) y force_enrich a false.
+        List<TrainingOption> options = noDescriptions
+                ? List.of(
+                        new TrainingOption("train_all", true),
+                        new TrainingOption("embedding_model", resolveEmbeddingModel(embeddingModel)),
+                        new TrainingOption("force_enrich", false),
+                        new TrainingOption("strategy", "embeddings_only"))
+                : List.of(
+                        new TrainingOption("train_all", true),
+                        new TrainingOption("embedding_model", resolveEmbeddingModel(embeddingModel)),
+                        new TrainingOption("force_enrich", regenerateDescriptions));
         training.markQueued(options);
         // Se reentrena la lista entera, así que nada está "entrenado" hasta que complete.
         elements.markAllTrained(listId, false);
@@ -246,7 +257,7 @@ public class TrainingService implements TrainingUseCases, TrainingLaunchService,
         training.recordElementIds(payload.stream().map(TrainingLaunchCommand.ElementPayload::id).toList());
         // El precio queda fijado aquí, antes de que el worker toque nada: al completar solo se
         // le suma el coste de cómputo reportado.
-        CostEstimate preset = presetCost(listElements, regenerateDescriptions);
+        CostEstimate preset = presetCost(listElements, regenerateDescriptions, noDescriptions);
         training.priceAtLaunch(new TrainingCost(null, preset.fixed(), preset.enrichment(), preset.total()));
         trainings.save(training);
 

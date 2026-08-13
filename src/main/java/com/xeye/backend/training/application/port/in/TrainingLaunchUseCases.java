@@ -8,13 +8,16 @@ public interface TrainingLaunchUseCases {
     /**
      * Lanza el training PENDING del usuario con el modelo dado (null = por defecto) y
      * devuelve el training tal como queda tras el intento. Con {@code regenerateDescriptions}
-     * el worker vuelve a generar el enriquecimiento LLM de todos los elementos, ignorando la caché.
+     * el worker vuelve a generar el enriquecimiento LLM de todos los elementos, ignorando la
+     * caché; con {@code noDescriptions} entrena sin descripciones IA (gana a regenerar).
      */
-    Training launch(Long userId, Long trainingId, String embeddingModel, boolean regenerateDescriptions);
+    Training launch(Long userId, Long trainingId, String embeddingModel,
+                    boolean regenerateDescriptions, boolean noDescriptions);
 
     /**
      * Reentrena la lista ya mismo, la haya marcado una edición o no: reutiliza su training
      * PENDING (o crea uno) y lo lanza con el modelo dado (null = por defecto).
      */
-    Training retrain(Long userId, Long listId, String embeddingModel, boolean regenerateDescriptions);
+    Training retrain(Long userId, Long listId, String embeddingModel,
+                     boolean regenerateDescriptions, boolean noDescriptions);
 }

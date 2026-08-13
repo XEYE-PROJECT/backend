@@ -36,9 +36,12 @@ public interface TrainingLaunchService {
      * @param regenerateDescriptions true = pedir al worker (opción {@code force_enrich}) que
      *                               ignore el enriquecimiento cacheado y regenere las
      *                               descripciones LLM de todos los elementos
+     * @param noDescriptions         true = entrenar sin descripciones IA (opción
+     *                               {@code strategy=embeddings_only}, sin paso LLM); gana a
+     *                               {@code regenerateDescriptions}
      */
     TrainingLaunchCommand prepareLaunch(Long trainingId, Long userId, String embeddingModel,
-                                        boolean regenerateDescriptions);
+                                        boolean regenerateDescriptions, boolean noDescriptions);
 
     void markLaunched(Long trainingId, String instanceId);
 

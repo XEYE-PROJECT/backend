@@ -59,8 +59,11 @@ public class MockTrainingLauncher implements TrainingLauncher {
         String model = "{\"embedding_model\":\"mock\",\"llm_model\":null,\"list_id\":" + command.listId() + "}";
         String embeddings = Base64.getEncoder()
                 .encodeToString(("mock-embeddings-list-" + command.listId()).getBytes(StandardCharsets.UTF_8));
-        // Como el worker real sin LLM: no genera nada, así que las descritas son las ya cacheadas.
-        int described = (int) command.elements().stream()
+        // Como el worker real sin LLM: no genera nada, así que las descritas son las ya cacheadas
+        // (con strategy=embeddings_only ni eso: el worker salta EnrichStep y reporta 0).
+        boolean embeddingsOnly = command.options().stream()
+                .anyMatch(option -> "strategy".equals(option.key()) && "embeddings_only".equals(option.value()));
+        int described = embeddingsOnly ? 0 : (int) command.elements().stream()
                 .filter(element -> element.generatedDescription() != null)
                 .count();
         TrainingUpdateCommand update = new TrainingUpdateCommand(

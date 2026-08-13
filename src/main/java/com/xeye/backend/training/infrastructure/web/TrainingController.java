@@ -44,14 +44,16 @@ public class TrainingController {
     /**
      * Precio preestablecido de lanzar un entrenamiento de la lista ahora mismo.
      * {@code ?regenerateDescriptions=true} = como si se regenerase el enriquecimiento LLM de
-     * todos los elementos, ignorando el cacheado.
+     * todos los elementos, ignorando el cacheado. {@code ?noDescriptions=true} = sin
+     * descripciones IA (gana a regenerar).
      */
     @GetMapping("/lists/{listId}/trainings/estimate")
     public TrainingCostEstimateResponse estimate(@AuthenticationPrincipal AuthenticatedUser current,
                                                  @PathVariable Long listId,
-                                                 @RequestParam(defaultValue = "false") boolean regenerateDescriptions) {
+                                                 @RequestParam(defaultValue = "false") boolean regenerateDescriptions,
+                                                 @RequestParam(defaultValue = "false") boolean noDescriptions) {
         return TrainingCostEstimateResponse.from(
-                trainings.estimateCost(current.id(), listId, regenerateDescriptions));
+                trainings.estimateCost(current.id(), listId, regenerateDescriptions, noDescriptions));
     }
 
     /** Trainings pendientes del usuario en todas sus listas — los avisos de reentrenar. */
@@ -82,7 +84,9 @@ public class TrainingController {
                                     @RequestBody(required = false) LaunchTrainingRequest request) {
         String embeddingModel = request == null ? null : request.embeddingModel();
         boolean regenerate = request != null && request.regenerate();
-        return TrainingResponse.from(launches.retrain(current.id(), listId, embeddingModel, regenerate));
+        boolean noDescriptions = request != null && request.skipDescriptions();
+        return TrainingResponse.from(
+                launches.retrain(current.id(), listId, embeddingModel, regenerate, noDescriptions));
     }
 
     /** Activa este training como el modelo en uso de la lista (debe cubrir sus elementos actuales). */
@@ -98,6 +102,8 @@ public class TrainingController {
                                    @RequestBody(required = false) LaunchTrainingRequest request) {
         String embeddingModel = request == null ? null : request.embeddingModel();
         boolean regenerate = request != null && request.regenerate();
-        return TrainingResponse.from(launches.launch(current.id(), id, embeddingModel, regenerate));
+        boolean noDescriptions = request != null && request.skipDescriptions();
+        return TrainingResponse.from(
+                launches.launch(current.id(), id, embeddingModel, regenerate, noDescriptions));
     }
 }

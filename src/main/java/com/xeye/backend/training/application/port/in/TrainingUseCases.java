@@ -27,9 +27,11 @@ public interface TrainingUseCases {
     /**
      * Precio preestablecido de lanzar un entrenamiento de la lista ahora mismo: el fijo por
      * entrenamiento más el precio por cada descripción LLM que habría que generar (elementos
-     * sin enriquecimiento cacheado, o todos si {@code regenerateDescriptions}).
+     * sin enriquecimiento cacheado, todos si {@code regenerateDescriptions}, ninguno si
+     * {@code noDescriptions}).
      */
-    CostEstimate estimateCost(Long userId, Long listId, boolean regenerateDescriptions);
+    CostEstimate estimateCost(Long userId, Long listId, boolean regenerateDescriptions,
+                              boolean noDescriptions);
 
     /** Desglose de la estimación; {@code total = fixed + enrichment}. */
     record CostEstimate(int descriptionsToGenerate, double fixed, double enrichment, double total) {

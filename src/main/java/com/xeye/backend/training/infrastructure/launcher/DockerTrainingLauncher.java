@@ -11,11 +11,15 @@ import tools.jackson.databind.ObjectMapper;
 
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
+import java.io.UncheckedIOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.time.Duration;
+import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.TimeUnit;
+import java.util.stream.Stream;
 
 /**
  * Provider local: un contenedor por training, igual que los de nube. El payload se escribe como
@@ -23,6 +27,8 @@ import java.util.concurrent.TimeUnit;
  * {@code host-input-dir} — el mismo directorio tal como lo ve el daemon de docker; difieren
  * cuando el backend corre en contenedor, y esa es la única razón de que existan ambos ajustes.
  * Arranca detached ({@code -d --rm}); el resultado vuelve por el webhook, aquí nada lo espera.
+ * El secreto del webhook va al worker como variable de entorno ({@code WEBHOOK_SECRET}), no en
+ * el fichero del job; los ficheros de jobs de más de un día se borran en cada lanzamiento.
  */
 @Component
 @ConditionalOnProperty(name = "xeye.training.provider", havingValue = "docker")
@@ -30,12 +36,15 @@ public class DockerTrainingLauncher implements TrainingLauncher {
 
     private static final Logger log = LoggerFactory.getLogger(DockerTrainingLauncher.class);
     private static final int START_TIMEOUT_SECONDS = 60;
+    private static final Duration JOB_FILE_RETENTION = Duration.ofDays(1);
 
     private final TrainingProperties.Docker config;
+    private final String webhookSecret;
     private final ObjectMapper json;
 
     public DockerTrainingLauncher(TrainingProperties properties, ObjectMapper json) {
         this.config = properties.docker();
+        this.webhookSecret = properties.webhookSecret();
         this.json = json;
     }
 
@@ -70,7 +79,7 @@ public class DockerTrainingLauncher implements TrainingLauncher {
     }
 
     private Result run(List<String> args) {
-        log.debug("{}", String.join(" ", args));
+        log.debug("{}", String.join(" ", redacted(args)));
         try {
             Process process = new ProcessBuilder(args).redirectErrorStream(true).start();
             String output = new String(process.getInputStream().readAllBytes(), StandardCharsets.UTF_8).trim();
@@ -108,10 +117,25 @@ public class DockerTrainingLauncher implements TrainingLauncher {
         }
     }
 
+    /** Los valores de {@code -e KEY=VALUE} (secreto del webhook, claves de LLM) nunca van al log. */
+    private static List<String> redacted(List<String> args) {
+        List<String> safe = new ArrayList<>(args.size());
+        for (int i = 0; i < args.size(); i++) {
+            String arg = args.get(i);
+            if (i > 0 && "-e".equals(args.get(i - 1)) && arg.contains("=")) {
+                safe.add(arg.substring(0, arg.indexOf('=')) + "=***");
+            } else {
+                safe.add(arg);
+            }
+        }
+        return safe;
+    }
+
     private Path writeJobFile(TrainingLaunchCommand command) {
         try {
             Path directory = Path.of(config.inputDir());
             Files.createDirectories(directory);
+            deleteStaleJobFiles(directory);
             Path file = directory.resolve("training-" + command.trainingId() + ".json");
             Files.writeString(file, json.writeValueAsString(command), StandardCharsets.UTF_8);
             return file;
@@ -120,12 +144,39 @@ public class DockerTrainingLauncher implements TrainingLauncher {
         }
     }
 
+    /** Un job terminado hace tiempo ya no necesita su fichero (contiene los textos de la lista). */
+    private void deleteStaleJobFiles(Path directory) {
+        Instant cutoff = Instant.now().minus(JOB_FILE_RETENTION);
+        try (Stream<Path> files = Files.list(directory)) {
+            files.filter(file -> file.getFileName().toString().matches("training-\\d+\\.json"))
+                    .filter(file -> lastModified(file).isBefore(cutoff))
+                    .forEach(file -> {
+                        try {
+                            Files.deleteIfExists(file);
+                        } catch (IOException ex) {
+                            log.debug("Could not delete stale job file {}: {}", file, ex.getMessage());
+                        }
+                    });
+        } catch (IOException | UncheckedIOException ex) {
+            log.debug("Could not list job files in {}: {}", directory, ex.getMessage());
+        }
+    }
+
+    private static Instant lastModified(Path file) {
+        try {
+            return Files.getLastModifiedTime(file).toInstant();
+        } catch (IOException ex) {
+            return Instant.MAX;
+        }
+    }
+
     private List<String> dockerRunArgs(TrainingLaunchCommand command, String fileName, boolean withGpu) {
         List<String> args = new ArrayList<>(List.of(
                 config.dockerBinary(), "run", "--rm", "-d",
                 "--name", "xeye-training-" + command.trainingId(),
                 "-v", config.hostInputDir() + ":/data/input:ro",
-                "-e", "TRAINING_DATA_PATH=/data/input/" + fileName));
+                "-e", "TRAINING_DATA_PATH=/data/input/" + fileName,
+                "-e", "WEBHOOK_SECRET=" + webhookSecret));
         if (withGpu) {
             args.add("--gpus");
             args.add(config.gpus());

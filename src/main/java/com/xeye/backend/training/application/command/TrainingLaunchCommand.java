@@ -10,13 +10,15 @@ import java.util.List;
  * de red: docker lo serializa tal cual y RunPod copia las mismas claves en su objeto
  * {@code input}. De ahí los nombres en snake_case — el worker (Python) los lee literalmente,
  * así que renombrar un componente rompe en silencio todos los providers.
+ * <p>
+ * El secreto del webhook NO viaja aquí a propósito: el job se escribe en disco (docker) o lo
+ * almacena RunPod, así que el worker lo recibe por su entorno ({@code WEBHOOK_SECRET}).
  */
 public record TrainingLaunchCommand(
         @JsonProperty("training_id") Long trainingId,
         @JsonProperty("list_id") Long listId,
         @JsonProperty("user_id") Long userId,
         @JsonProperty("callback_url") String callbackUrl,
-        @JsonProperty("webhook_secret") String webhookSecret,
         ListPayload list,
         List<ElementPayload> elements,
         List<TrainingOption> options) {

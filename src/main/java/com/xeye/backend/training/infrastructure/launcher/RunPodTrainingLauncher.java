@@ -17,7 +17,9 @@ import java.util.Map;
 /**
  * Envía un job a un endpoint Serverless de RunPod ({@code POST /v2/{endpointId}/run}). Las
  * claves del objeto {@code input} coinciden exactamente con lo que lee el training-service de
- * XEYE, así el worker corre sin cambios. RunPod llama a nuestro webhook al terminar.
+ * XEYE, así el worker corre sin cambios. El propio worker entrega el resultado a nuestro
+ * webhook con {@code X-Webhook-Token}: el secreto está en las variables del endpoint
+ * ({@code WEBHOOK_SECRET}), nunca dentro del job que RunPod almacena.
  */
 @Component
 @ConditionalOnProperty(name = "xeye.training.provider", havingValue = "runpod")
@@ -40,14 +42,13 @@ public class RunPodTrainingLauncher implements TrainingLauncher {
         input.put("list_id", command.listId());
         input.put("user_id", command.userId());
         input.put("callback_url", command.callbackUrl());
-        input.put("webhook_secret", command.webhookSecret());
         input.put("list", command.list());
         input.put("elements", command.elements());
         input.put("options", command.options() == null ? List.of() : command.options());
 
+        // Sin "webhook" nativo de RunPod: llegaría sin cabecera y solo generaría 403 de ruido.
         Map<String, Object> body = new LinkedHashMap<>();
         body.put("input", input);
-        body.put("webhook", command.callbackUrl());
 
         RunPodResponse response = http.post()
                 .uri("/{endpointId}/run", config.endpointId())

@@ -4,6 +4,8 @@ import com.fasterxml.jackson.annotation.JsonProperty;
 import com.xeye.backend.training.application.command.TrainingUpdateCommand;
 import com.xeye.backend.training.domain.model.TrainingCost;
 import com.xeye.backend.training.domain.model.TrainingTime;
+import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.NotNull;
 
 import java.util.HashMap;
 import java.util.Map;
@@ -13,9 +15,9 @@ import java.util.Map;
  * que envía el training-service de XEYE (one-shot y handler de RunPod).
  */
 public record TrainingWebhookRequest(
-        @JsonProperty("training_id") Long trainingId,
+        @NotNull @JsonProperty("training_id") Long trainingId,
         @JsonProperty("list_id") Long listId,
-        String status,
+        @NotBlank String status,
         @JsonProperty("embeddings_data") String embeddingsData,
         String model,
         String error,

@@ -263,7 +263,7 @@ public class TrainingService implements TrainingUseCases, TrainingLaunchService,
 
         return new TrainingLaunchCommand(
                 training.id(), listId, userId,
-                properties.callbackUrl(), properties.webhookSecret(),
+                properties.callbackUrl(),
                 new TrainingLaunchCommand.ListPayload(list.id(), list.name(), list.description()),
                 payload, options);
     }

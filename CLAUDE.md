@@ -55,6 +55,20 @@ Scope is deliberately smaller than the Python original (university project): no 
 - **Auth:** `JwtAuthenticationFilter` (wired in `SecurityConfig`, not a `@Component`) puts an
   `AuthenticatedUser(id, email, permission)` principal in the context. Controllers read it via
   `@AuthenticationPrincipal AuthenticatedUser`. Ownership is enforced in services by `userId`.
+  **Service-to-service auth** (`/webhooks/**` with `X-Webhook-Token`, `/internal/**` with
+  `X-Internal-Token`) is done by `SharedSecretAuthenticationFilter` in `SecurityConfig`
+  (constant-time compare via `SecretTokens`, fail-closed, 403 before the controller; routes
+  require `ROLE_TRAINING_WORKER` / `ROLE_SEARCH_SERVICE`). Controllers never check secrets.
+- **Config safety:** no default Spring profile. `application.yml` has NO defaults for secrets,
+  DB, providers or CORS; `application-dev.yml` holds the dev defaults (activated by
+  `mvn spring-boot:run` via the pom, by `docker-compose.dev.yml`, or `SPRING_PROFILES_ACTIVE=dev`);
+  `application-prod.yml` + `ProductionConfigGuard` (`@Profile("prod")`) abort startup on dev or
+  weak values. The production `Dockerfile` sets `SPRING_PROFILES_ACTIVE=prod`. Properties records
+  are `@Validated`.
+- **API keys are hashed:** `api_keys.key_hash` (SHA-256 hex, `ApiKeyHasher`) + `key_prefix`;
+  the raw value exists only in the `POST /api-keys` response (`ApiKeyCreatedResponse`). The
+  search bootstrap/sync carry `keyHash`, never the key. Migration V6 hashed existing rows with
+  `SHA2()` (identical output).
 - **Errors:** throw `shared.exception.*` (`NotFoundException`→404, `ConflictException`→409,
   `BadRequestException`→400, `UnauthorizedException`→401, `ForbiddenException`→403).
   `GlobalExceptionHandler` maps them to `ApiError` JSON. Do not catch them in controllers.
@@ -76,6 +90,8 @@ Trigger → pending → launch (user) → callback → activate. All wiring live
    marks **all** the list's elements `trained=false`, builds the payload and records the
    launch-time element ids on `trainings.element_ids` — the search service aligns embedding
    rows to elements by id), then `TrainingLauncher.launch(...)`, then `markLaunched`.
+   The webhook secret is **not** in the payload: the docker launcher passes it as
+   `-e WEBHOOK_SECRET`, the RunPod endpoint has it in its env.
    **Launch caps** (`assertLaunchCapacity`, both → 409): a list with a launched-but-unfinished
    run cannot launch another, and at most `xeye.training.max-concurrent` runs
    (`TRAINING_MAX_CONCURRENT`, default 1, `<=0` = unlimited) may run backend-wide — each run is
@@ -96,8 +112,8 @@ Trigger → pending → launch (user) → callback → activate. All wiring live
      whenever possible, never a reason to fail a training. Only the CUDA image (`Dockerfile.gpu`)
      can actually use it; the launcher always overrides the CMD with the one-shot entrypoint.
    - `runpod`: `RunPodTrainingLauncher` POSTs `https://api.runpod.ai/v2/{endpointId}/run`.
-4. **Callback.** `POST /webhooks/training-update` (`TrainingWebhookController`, `X-Webhook-Token`
-   header) → `TrainingService.applyUpdate`. On `completed`: set embeddings/model/time/cost, cache the
+4. **Callback.** `POST /webhooks/training-update` (`TrainingWebhookController`; the
+   `X-Webhook-Token` header is verified by `SharedSecretAuthenticationFilter`) → `TrainingService.applyUpdate`. On `completed`: set embeddings/model/time/cost, cache the
    worker's `generated_descriptions` on the elements (see below), set this training
    **`in_use=true`** (clearing it on all other trainings of the list), mark the list's elements
    `trained=true`, and push to search via `SearchIndexer`.
@@ -128,9 +144,10 @@ Semantics decided here (adjust if the user wants otherwise):
 The search microservice keeps everything in RAM and treats this backend as the source of
 truth. Three pieces, all in the `search` module:
 
-- **Internal sync API** (`InternalSearchController`; route is `permitAll` and guarded by the
-  shared `X-Internal-Token`, same pattern as the webhook): `GET /internal/search/bootstrap`
-  (raw api keys + all list metadata + the available embedding models, which search
+- **Internal sync API** (`InternalSearchController`; `/internal/**` requires the shared
+  `X-Internal-Token`, verified by `SharedSecretAuthenticationFilter`, same as the webhook; the
+  production proxy does not expose it): `GET /internal/search/bootstrap`
+  (api key **hashes** + all list metadata + the available embedding models, which search
   pre-warms at startup), `GET /internal/search/lists/{listId}` (elements + the
   in_use training's `embeddingsData`/`model` — the lazy-load counterpart of the index push),
   `POST /internal/search/logs` (batched search-log ingestion → `searches` table, migration V2).
@@ -156,7 +173,7 @@ docker compose -f docker-compose.dev.yml up --build
 docker compose -f docker-compose.dev.yml exec backend mvn -o compile
 
 # Or run the app on the host against a dockerised DB (best IDE hot-reload):
-mvn spring-boot:run      # profile 'dev' by default; needs DB_URL/DB_USERNAME/DB_PASSWORD
+mvn spring-boot:run      # activates profile 'dev' (pom); DB_URL/DB_USERNAME/DB_PASSWORD override the localhost defaults
 
 mvn -q compile           # compile only
 mvn test                 # pure domain unit tests (no DB needed)
@@ -172,9 +189,10 @@ Hot reload: DevTools watches `target/classes`. Saving a file in an IDE that auto
 `xeye.training.{provider,webhook-secret,callback-base-url,mock-delay-ms,embedding-models,stalled-after-minutes,max-concurrent,docker.*,runpod.*}`,
 `xeye.search.{provider,url,internal-service-name,internal-token}` (`SearchProperties` lives in
 `shared/config` — the `training` and `search` modules both use it),
-`DB_URL/DB_USERNAME/DB_PASSWORD`, `SERVER_PORT`.
-Profile `dev` (default): mock training, log search, verbose logs, seeds an admin user
-(`admin@xeye.local` / `admin1234`, see `DevAdminSeeder`).
+`DB_URL/DB_USERNAME/DB_PASSWORD`, `SERVER_PORT`, `SENTRY_DSN` (empty = off; Sentry Boot 4 starter).
+Profile `dev` (must be activated explicitly — `mvn spring-boot:run` does it): mock training,
+log search, verbose logs, seeds an admin user (`admin@xeye.local` / `admin1234`, see
+`DevAdminSeeder`). Profile `prod`: no defaults, `ProductionConfigGuard`.
 
 ## API surface
 
@@ -182,6 +200,7 @@ Public: `POST /auth/register`, `POST /auth/login`, `POST /webhooks/training-upda
 `/internal/search/*` (`X-Internal-Token`, search-service only).
 Authenticated (`Authorization: Bearer <jwt>`):
 `GET|PUT|DELETE /users/me` · `GET|POST /api-keys`, `PUT|DELETE /api-keys/{id}` ·
+(`POST /api-keys` is the only response carrying the raw key) ·
 `GET|POST /lists`, `GET|PUT|DELETE /lists/{id}` ·
 `GET|POST /lists/{listId}/elements`, `POST /lists/{listId}/elements/import`, `PUT|DELETE /elements/{id}` ·
 `GET /lists/{listId}/trainings`, `POST /lists/{listId}/trainings` (retrain), `GET /trainings/{id}`,

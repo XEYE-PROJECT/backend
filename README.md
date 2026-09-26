@@ -50,9 +50,18 @@ DB_USERNAME=xeye DB_PASSWORD=xeye mvn spring-boot:run
 # Backend en http://localhost:8080
 ```
 
-El perfil `dev` (por defecto) usa el proveedor de entrenamiento **mock** (simula el
+No hay perfil por defecto: `mvn spring-boot:run` activa `dev` (configurado en `pom.xml`),
+`docker-compose.dev.yml` también, y la imagen de producción fija `prod` en su Dockerfile. Sin
+perfil, la app no arranca (los secretos no tienen default). En el IDE: `SPRING_PROFILES_ACTIVE=dev`.
+
+El perfil `dev` (`application-dev.yml`) usa el proveedor de entrenamiento **mock** (simula el
 entrenamiento en memoria, sin RunPod) y **loguea** el envío a búsqueda, así que arranca sin
 credenciales. Además crea un admin de desarrollo: `admin@xeye.local` / `admin1234`.
+
+El perfil `prod` (`application-prod.yml`) exige por entorno todos los secretos y la BD, y
+`ProductionConfigGuard` aborta el arranque si algún valor es de desarrollo, demasiado corto o
+inseguro (`TRAINING_PROVIDER=mock`, `SEARCH_PROVIDER` ≠ `http`, orígenes CORS o `BACKEND_URL`
+sin `https://`). El error nombra la variable de entorno.
 
 ## Variables de entorno
 
@@ -60,21 +69,29 @@ Ver [.env.example](.env.example). Las principales:
 
 | Variable | Descripción |
 |---|---|
+| `SPRING_PROFILES_ACTIVE` | `dev` o `prod` (obligatorio; la imagen de producción ya lo fija) |
 | `DB_URL`, `DB_USERNAME`, `DB_PASSWORD` | Conexión a MariaDB |
 | `JWT_SECRET` | Secreto HS256 (≥ 32 bytes) |
-| `TRAINING_PROVIDER` | `mock` (dev) o `runpod` |
-| `RUNPOD_API_KEY`, `RUNPOD_ENDPOINT_ID`, `TRAINING_WEBHOOK_SECRET`, `BACKEND_URL` | Entrenamiento real |
-| `SEARCH_PROVIDER` | `log` (dev) o `http` |
-| `SEARCH_SERVICE_URL` | URL del microservicio de búsqueda |
+| `CORS_ORIGINS` | Orígenes exactos del frontend, separados por comas |
+| `TRAINING_PROVIDER` | `mock` (solo dev), `docker` o `runpod` |
+| `RUNPOD_API_KEY`, `RUNPOD_ENDPOINT_ID`, `BACKEND_URL` | Entrenamiento real |
+| `TRAINING_WEBHOOK_SECRET` | Secreto de `X-Webhook-Token`; el worker lo recibe por su entorno (`WEBHOOK_SECRET`), nunca en el job |
+| `SEARCH_PROVIDER` | `log` (solo dev) o `http` |
+| `SEARCH_SERVICE_URL`, `SEARCH_INTERNAL_TOKEN` | URL y secreto compartido (`X-Internal-Token`) del microservicio de búsqueda |
+| `SENTRY_DSN`, `SENTRY_ENVIRONMENT` | Error tracking (vacío = desactivado) |
 
 ## Endpoints
 
-Públicos: `POST /auth/register`, `POST /auth/login`, `POST /webhooks/training-update`.
-El resto requiere cabecera `Authorization: Bearer <token>`:
+Públicos: `POST /auth/register`, `POST /auth/login`, `GET /actuator/health`.
+Servidor a servidor (secreto compartido en cabecera, comparado en tiempo constante, 403 si
+falta o no coincide): `POST /webhooks/training-update` (`X-Webhook-Token`, worker de training)
+y `/internal/search/*` (`X-Internal-Token`, search-service; el proxy de producción no los
+publica). El resto requiere cabecera `Authorization: Bearer <token>`:
 
 ```
 GET|PUT|DELETE /users/me
-GET|POST /api-keys        PUT|DELETE /api-keys/{id}
+GET|POST /api-keys        PUT|DELETE /api-keys/{id}   (POST es la ÚNICA respuesta con la clave completa;
+                                                      después solo existe su hash y se muestra el prefijo)
 GET|POST /lists           GET|PUT|DELETE /lists/{id}
 GET|POST /lists/{listId}/elements    PUT|DELETE /elements/{id}
 GET /lists/{listId}/trainings        GET /trainings/{id}
@@ -94,7 +111,7 @@ curl -s -X POST localhost:8080/lists -H "Authorization: Bearer $TOKEN" \
 ## Tests
 
 ```bash
-mvn test     # tests unitarios de dominio (no necesitan base de datos)
+mvn test     # tests unitarios (dominio, guard de producción, filtro de secreto compartido; sin BD)
 ```
 
 ## Estructura

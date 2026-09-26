@@ -13,7 +13,7 @@ public interface ApiKeyRepository {
 
     Optional<ApiKey> findByIdAndUserId(Long id, Long userId);
 
-    boolean existsByApiKey(String apiKey);
+    boolean existsByKeyHash(String keyHash);
 
     ApiKey save(ApiKey apiKey);
 

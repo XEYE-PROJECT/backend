@@ -14,7 +14,8 @@ public interface SearchSyncNotifier {
     /** Los elementos de la lista cambiaron; búsqueda debe descartar su copia cacheada y recargar. */
     void listDataInvalidated(Long listId);
 
-    void apiKeyCreated(Long apiKeyId, Long userId, String apiKey);
+    /** {@code keyHash} es el SHA-256 hex de la clave: búsqueda autentica hasheando la cabecera recibida. */
+    void apiKeyCreated(Long apiKeyId, Long userId, String keyHash);
 
     void apiKeyDeleted(Long apiKeyId);
 

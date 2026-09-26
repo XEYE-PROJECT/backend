@@ -12,7 +12,8 @@ final class ApiKeyMapper {
                 entity.getId(),
                 entity.getUserId(),
                 entity.getName(),
-                entity.getApiKey(),
+                entity.getKeyHash(),
+                entity.getKeyPrefix(),
                 entity.getCreatedAt(),
                 entity.getUpdatedAt());
     }
@@ -22,7 +23,8 @@ final class ApiKeyMapper {
         entity.setId(apiKey.id());
         entity.setUserId(apiKey.userId());
         entity.setName(apiKey.name());
-        entity.setApiKey(apiKey.apiKey());
+        entity.setKeyHash(apiKey.keyHash());
+        entity.setKeyPrefix(apiKey.prefix());
         return entity;
     }
 }

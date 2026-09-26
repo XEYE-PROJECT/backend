@@ -3,27 +3,34 @@ package com.xeye.backend.apikey.domain.model;
 import java.time.Instant;
 import java.util.Objects;
 
-/** Agregado ApiKey. El valor secreto se guarda en claro (el search-service lo cachea). */
+/**
+ * Agregado ApiKey. Solo guarda el SHA-256 (hex) de la clave y un prefijo para identificarla en
+ * la consola; el valor completo se entrega una única vez al crearla y no puede recuperarse.
+ */
 public class ApiKey {
 
     private final Long id;
     private final Long userId;
     private String name;
-    private final String apiKey;
+    private final String keyHash;
+    private final String prefix;
     private final Instant createdAt;
     private final Instant updatedAt;
 
-    public ApiKey(Long id, Long userId, String name, String apiKey, Instant createdAt, Instant updatedAt) {
+    public ApiKey(Long id, Long userId, String name, String keyHash, String prefix,
+                  Instant createdAt, Instant updatedAt) {
         this.id = id;
         this.userId = Objects.requireNonNull(userId, "userId");
         this.name = requireText(name);
-        this.apiKey = Objects.requireNonNull(apiKey, "apiKey");
+        this.keyHash = requireText(keyHash);
+        this.prefix = Objects.requireNonNull(prefix, "prefix");
         this.createdAt = createdAt;
         this.updatedAt = updatedAt;
     }
 
-    public static ApiKey create(Long userId, String name, String apiKey) {
-        return new ApiKey(null, userId, name, apiKey, null, null);
+    /** Nueva clave a partir de su valor en claro; el valor no se conserva en el agregado. */
+    public static ApiKey create(Long userId, String name, String rawKey) {
+        return new ApiKey(null, userId, name, ApiKeyHasher.hash(rawKey), ApiKeyHasher.prefixOf(rawKey), null, null);
     }
 
     public void rename(String name) {
@@ -32,7 +39,7 @@ public class ApiKey {
 
     private static String requireText(String value) {
         if (value == null || value.isBlank()) {
-            throw new IllegalArgumentException("API key name must not be blank");
+            throw new IllegalArgumentException("Value must not be blank");
         }
         return value.trim();
     }
@@ -49,8 +56,14 @@ public class ApiKey {
         return name;
     }
 
-    public String apiKey() {
-        return apiKey;
+    /** SHA-256 hex (minúsculas) del valor en claro. */
+    public String keyHash() {
+        return keyHash;
+    }
+
+    /** Primeros caracteres del valor en claro, para reconocer la clave sin revelarla. */
+    public String prefix() {
+        return prefix;
     }
 
     public Instant createdAt() {

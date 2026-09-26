@@ -5,6 +5,7 @@ import com.xeye.backend.apikey.application.port.in.ApiKeyUseCases;
 import com.xeye.backend.apikey.application.port.out.ApiKeyGenerator;
 import com.xeye.backend.apikey.application.port.out.ApiKeyRepository;
 import com.xeye.backend.apikey.domain.model.ApiKey;
+import com.xeye.backend.apikey.domain.model.ApiKeyHasher;
 import com.xeye.backend.shared.event.ApiKeyCreatedEvent;
 import com.xeye.backend.shared.event.ApiKeyDeletedEvent;
 import com.xeye.backend.shared.exception.NotFoundException;
@@ -44,11 +45,12 @@ public class ApiKeyService implements ApiKeyUseCases, ApiKeyQueryPort {
 
     @Override
     @Transactional
-    public ApiKey create(Long userId, String name) {
-        String value = uniqueKey();
-        ApiKey created = apiKeys.save(ApiKey.create(userId, resolveName(name), value));
-        events.publishEvent(new ApiKeyCreatedEvent(created.id(), userId, created.apiKey()));
-        return created;
+    public CreatedApiKey create(Long userId, String name) {
+        String rawKey = uniqueRawKey();
+        ApiKey created = apiKeys.save(ApiKey.create(userId, resolveName(name), rawKey));
+        // Búsqueda recibe el hash, nunca el valor: es lo único que necesita para autenticar.
+        events.publishEvent(new ApiKeyCreatedEvent(created.id(), userId, created.keyHash()));
+        return new CreatedApiKey(created, rawKey);
     }
 
     @Override
@@ -76,11 +78,11 @@ public class ApiKeyService implements ApiKeyUseCases, ApiKeyQueryPort {
         return (name == null || name.isBlank()) ? DEFAULT_NAME : name.trim();
     }
 
-    private String uniqueKey() {
+    private String uniqueRawKey() {
         for (int attempt = 0; attempt < MAX_GENERATION_ATTEMPTS; attempt++) {
-            String value = generator.generate();
-            if (!apiKeys.existsByApiKey(value)) {
-                return value;
+            String rawKey = generator.generate();
+            if (!apiKeys.existsByKeyHash(ApiKeyHasher.hash(rawKey))) {
+                return rawKey;
             }
         }
         throw new IllegalStateException("Could not generate a unique API key");

@@ -25,8 +25,12 @@ public class ApiKeyJpaEntity {
     @Column(nullable = false, length = 150)
     private String name;
 
-    @Column(name = "api_key", nullable = false, length = 255, unique = true)
-    private String apiKey;
+    /** SHA-256 hex de la clave (migración V6); la clave en claro no se guarda. */
+    @Column(name = "key_hash", nullable = false, length = 64, unique = true)
+    private String keyHash;
+
+    @Column(name = "key_prefix", nullable = false, length = 12)
+    private String keyPrefix;
 
     @Generated(event = EventType.INSERT)
     @Column(name = "created_at", insertable = false, updatable = false)
@@ -63,12 +67,20 @@ public class ApiKeyJpaEntity {
         this.name = name;
     }
 
-    public String getApiKey() {
-        return apiKey;
+    public String getKeyHash() {
+        return keyHash;
     }
 
-    public void setApiKey(String apiKey) {
-        this.apiKey = apiKey;
+    public void setKeyHash(String keyHash) {
+        this.keyHash = keyHash;
+    }
+
+    public String getKeyPrefix() {
+        return keyPrefix;
+    }
+
+    public void setKeyPrefix(String keyPrefix) {
+        this.keyPrefix = keyPrefix;
     }
 
     public Instant getCreatedAt() {

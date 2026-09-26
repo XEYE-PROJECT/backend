@@ -11,5 +11,5 @@ interface ApiKeyJpaRepository extends JpaRepository<ApiKeyJpaEntity, Long> {
 
     Optional<ApiKeyJpaEntity> findByIdAndUserId(Long id, Long userId);
 
-    boolean existsByApiKey(String apiKey);
+    boolean existsByKeyHash(String keyHash);
 }

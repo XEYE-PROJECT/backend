@@ -32,8 +32,8 @@ public class ApiKeyPersistenceAdapter implements ApiKeyRepository {
     }
 
     @Override
-    public boolean existsByApiKey(String apiKey) {
-        return jpa.existsByApiKey(apiKey);
+    public boolean existsByKeyHash(String keyHash) {
+        return jpa.existsByKeyHash(keyHash);
     }
 
     @Override

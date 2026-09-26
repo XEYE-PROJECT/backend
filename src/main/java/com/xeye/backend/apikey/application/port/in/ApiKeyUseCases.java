@@ -9,9 +9,13 @@ public interface ApiKeyUseCases {
 
     List<ApiKey> listForUser(Long userId);
 
-    ApiKey create(Long userId, String name);
+    /** Crea la clave y devuelve su valor en claro: la única vez que existe fuera del hash. */
+    CreatedApiKey create(Long userId, String name);
 
     ApiKey rename(Long userId, Long apiKeyId, String name);
 
     void delete(Long userId, Long apiKeyId);
+
+    record CreatedApiKey(ApiKey apiKey, String rawKey) {
+    }
 }

@@ -4,10 +4,11 @@ import com.xeye.backend.apikey.domain.model.ApiKey;
 
 import java.time.Instant;
 
+/** Vista de una clave existente: nunca incluye el valor en claro (solo el prefijo identificativo). */
 public record ApiKeyResponse(
         Long id,
         String name,
-        String apiKey,
+        String prefix,
         Instant createdAt,
         Instant updatedAt) {
 
@@ -15,7 +16,7 @@ public record ApiKeyResponse(
         return new ApiKeyResponse(
                 apiKey.id(),
                 apiKey.name(),
-                apiKey.apiKey(),
+                apiKey.prefix(),
                 apiKey.createdAt(),
                 apiKey.updatedAt());
     }

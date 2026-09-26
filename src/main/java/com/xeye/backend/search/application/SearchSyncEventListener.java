@@ -54,7 +54,7 @@ public class SearchSyncEventListener {
     @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)
     public void onApiKeyCreated(ApiKeyCreatedEvent event) {
         notify("api key created", () ->
-                notifier.apiKeyCreated(event.apiKeyId(), event.userId(), event.apiKey()));
+                notifier.apiKeyCreated(event.apiKeyId(), event.userId(), event.keyHash()));
     }
 
     @Async("searchSyncTaskExecutor")

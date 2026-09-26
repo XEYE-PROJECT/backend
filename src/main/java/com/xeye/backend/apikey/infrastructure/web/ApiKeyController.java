@@ -1,6 +1,7 @@
 package com.xeye.backend.apikey.infrastructure.web;
 
 import com.xeye.backend.apikey.application.port.in.ApiKeyUseCases;
+import com.xeye.backend.apikey.infrastructure.web.dto.ApiKeyCreatedResponse;
 import com.xeye.backend.apikey.infrastructure.web.dto.ApiKeyResponse;
 import com.xeye.backend.apikey.infrastructure.web.dto.CreateApiKeyRequest;
 import com.xeye.backend.apikey.infrastructure.web.dto.UpdateApiKeyRequest;
@@ -35,11 +36,12 @@ public class ApiKeyController {
         return apiKeys.listForUser(current.id()).stream().map(ApiKeyResponse::from).toList();
     }
 
+    /** Única respuesta que incluye la clave en claro: el listado y el renombrado solo devuelven el prefijo. */
     @PostMapping
     @ResponseStatus(HttpStatus.CREATED)
-    public ApiKeyResponse create(@AuthenticationPrincipal AuthenticatedUser current,
-                                 @Valid @RequestBody CreateApiKeyRequest request) {
-        return ApiKeyResponse.from(apiKeys.create(current.id(), request.name()));
+    public ApiKeyCreatedResponse create(@AuthenticationPrincipal AuthenticatedUser current,
+                                        @Valid @RequestBody CreateApiKeyRequest request) {
+        return ApiKeyCreatedResponse.from(apiKeys.create(current.id(), request.name()));
     }
 
     @PutMapping("/{id}")

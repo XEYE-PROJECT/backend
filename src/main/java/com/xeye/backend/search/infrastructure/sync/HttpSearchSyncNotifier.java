@@ -75,12 +75,12 @@ public class HttpSearchSyncNotifier implements SearchSyncNotifier {
     }
 
     @Override
-    public void apiKeyCreated(Long apiKeyId, Long userId, String apiKey) {
+    public void apiKeyCreated(Long apiKeyId, Long userId, String keyHash) {
         http.put()
                 .uri("/v1/api-keys/{id}", apiKeyId)
                 .headers(this::internalHeaders)
                 .contentType(MediaType.APPLICATION_JSON)
-                .body(new ApiKeyPayload(userId, apiKey))
+                .body(new ApiKeyPayload(userId, keyHash))
                 .retrieve()
                 .toBodilessEntity();
         log.debug("Notified search: api key {} created", apiKeyId);
@@ -114,6 +114,7 @@ public class HttpSearchSyncNotifier implements SearchSyncNotifier {
     record ListMetaPayload(Long userId, String name, boolean isPublic) {
     }
 
-    record ApiKeyPayload(Long userId, String apiKey) {
+    /** Solo el hash SHA-256: el search-service nunca recibe claves en claro. */
+    record ApiKeyPayload(Long userId, String keyHash) {
     }
 }

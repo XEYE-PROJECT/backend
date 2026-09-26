@@ -29,7 +29,7 @@ public class LoggingSearchSyncNotifier implements SearchSyncNotifier {
     }
 
     @Override
-    public void apiKeyCreated(Long apiKeyId, Long userId, String apiKey) {
+    public void apiKeyCreated(Long apiKeyId, Long userId, String keyHash) {
         log.info("[search:log] would notify api key {} created for user {}", apiKeyId, userId);
     }
 

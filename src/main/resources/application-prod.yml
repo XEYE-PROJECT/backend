@@ -1,0 +1,16 @@
+# Perfil prod: sin ningún default de secretos (los exige application.yml) y con
+# ProductionConfigGuard comprobando al arrancar que no queda ningún valor de desarrollo.
+spring:
+  jpa:
+    show-sql: false
+
+server:
+  # Caddy termina TLS y manda X-Forwarded-*: así la app sabe que la petición es https.
+  forward-headers-strategy: native
+  error:
+    include-stacktrace: never
+
+logging:
+  level:
+    root: INFO
+    com.xeye.backend: INFO

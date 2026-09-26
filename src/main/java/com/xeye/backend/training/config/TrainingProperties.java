@@ -1,20 +1,28 @@
 package com.xeye.backend.training.config;
 
+import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.NotEmpty;
 import org.springframework.boot.context.properties.ConfigurationProperties;
+import org.springframework.validation.annotation.Validated;
 
 import java.util.List;
 
-/** Vincula {@code xeye.training.*}. */
+/**
+ * Vincula {@code xeye.training.*}. Los campos obligatorios se validan al enlazar la
+ * configuración (la app no arranca sin provider, secreto del webhook o URL de callback).
+ */
+@Validated
 @ConfigurationProperties(prefix = "xeye.training")
 public record TrainingProperties(
-        String provider,
-        String webhookSecret,
-        String callbackBaseUrl,
+        @NotBlank String provider,
+        /** Secreto de {@code X-Webhook-Token}. Llega al worker por su entorno, no en el job. */
+        @NotBlank String webhookSecret,
+        @NotBlank String callbackBaseUrl,
         long mockDelayMs,
         /** Modelos de embedding elegibles para un training; el primero es el por defecto. Cada
          *  nombre debe poder cargarlo sentence-transformers tanto en el worker como en el
          *  search-service (ambos los hornean en sus imágenes). */
-        List<String> embeddingModels,
+        @NotEmpty List<String> embeddingModels,
         /** Un training lanzado sin actualización del webhook en este tiempo se da por estancado
          *  y se marca fallido (su lista vuelve a pending). 0 desactiva el barrido. */
         long stalledAfterMinutes,

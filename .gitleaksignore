@@ -1,0 +1,3 @@
+# Falsos positivos de gitleaks (fingerprint = commit:fichero:regla:línea). Revisar antes de añadir.
+# Commit inicial de .env.example: la línea "JWT_SECRET=" con el comentario de generación, sin valor real.
+790177bab2d9fec6620f08f998eb7ddd740501e4:.env.example:generic-api-key:20

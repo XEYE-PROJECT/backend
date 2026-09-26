@@ -1,53 +1,79 @@
+# Configuración base, común a todo entorno. Los valores que dependen del entorno (secretos,
+# BD, proveedores, orígenes CORS) NO tienen default aquí a propósito: un placeholder sin
+# variable de entorno aborta el arranque ("Could not resolve placeholder 'JWT_SECRET'"), que
+# es lo seguro. Los defaults de desarrollo viven en application-dev.yml.
+#
+# Tampoco hay perfil por defecto: hay que activar `dev` o `prod` explícitamente
+# (`mvn spring-boot:run` activa dev vía pom.xml; docker-compose.dev.yml fija dev; la imagen
+# de producción fija prod en su Dockerfile). Sin perfil, la app no arranca.
 spring:
   application:
     name: xeye-backend
-  # Un `mvn spring-boot:run` a secas arranca el perfil dev (training mock, logs verbosos).
-  profiles:
-    default: dev
   datasource:
-    url: ${DB_URL:jdbc:mysql://localhost:3306/xeye?allowPublicKeyRetrieval=true&useSSL=false&serverTimezone=UTC&createDatabaseIfNotExist=true}
-    username: ${DB_USERNAME:xeye}
-    password: ${DB_PASSWORD:xeye}
+    url: ${DB_URL}
+    username: ${DB_USERNAME}
+    password: ${DB_PASSWORD}
     driver-class-name: com.mysql.cj.jdbc.Driver
   jpa:
     hibernate:
       # El esquema es de Flyway. Hibernate nunca toca el DDL.
       ddl-auto: none
     open-in-view: false
-    properties:
-      hibernate:
-        format_sql: true
   flyway:
     enabled: true
 
 server:
   port: ${SERVER_PORT:8000}
 
+# Actuator: solo /actuator/health y sin detalles (el proxy bloquea el resto de /actuator/*).
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health
+  endpoint:
+    health:
+      show-details: never
+
+# Sentry: desactivado si SENTRY_DSN está vacío (dev no necesita nada). Solo errores
+# (sin tracing); los logs a nivel ERROR se convierten en eventos vía logback.
+sentry:
+  dsn: ${SENTRY_DSN:}
+  environment: ${SENTRY_ENVIRONMENT:local}
+  release: ${SENTRY_RELEASE:}
+  send-default-pii: false
+  traces-sample-rate: 0.0
+  logging:
+    minimum-event-level: error
+    minimum-breadcrumb-level: info
+
 # ---- Configuración propia de la aplicación (ver com.xeye.backend.shared.config) ----
 xeye:
   jwt:
-    # 32+ caracteres para HS256. Sobreescribir en todo entorno real.
-    secret: ${JWT_SECRET:dev-only-insecure-secret-change-me-please-0123456789}
+    # >= 32 bytes (HS256). Generar con: openssl rand -base64 48
+    secret: ${JWT_SECRET}
     expiration-minutes: ${JWT_EXPIRATION_MINUTES:60}
     issuer: xeye-backend
   cors:
-    # Dev local: Nuxt prefiere 3000 pero puede caer a 3001/3002; 5173 es el frontend Vite antiguo.
-    allowed-origins: ${CORS_ORIGINS:http://localhost:3000,http://localhost:3001,http://localhost:3002,http://localhost:5173}
+    # Orígenes exactos del frontend, separados por comas (allowCredentials: sin comodines).
+    allowed-origins: ${CORS_ORIGINS}
   training:
     # Cómo se ejecuta un training. Todos los providers reciben el mismo payload y responden por
     # el mismo webhook — solo cambia *dónde* corre el contenedor.
-    #   mock   -> simula la finalización en el propio proceso (sin servicios externos)
+    #   mock   -> simula la finalización en el propio proceso (solo dev)
     #   docker -> un contenedor local por training (`docker run`, imagen del training-service)
     #   runpod -> POST del job a un endpoint Serverless de RunPod (GPU: el montaje con LLM local)
-    provider: ${TRAINING_PROVIDER:mock}
-    webhook-secret: ${TRAINING_WEBHOOK_SECRET:dev-webhook-secret}
+    provider: ${TRAINING_PROVIDER}
+    # Secreto de la cabecera X-Webhook-Token del callback del worker. El worker lo recibe por
+    # su entorno (WEBHOOK_SECRET), nunca dentro del payload del job.
+    webhook-secret: ${TRAINING_WEBHOOK_SECRET}
     # Modelos ofrecidos al lanzar un training pendiente (el primero = por defecto). Tanto el
     # worker de training como el search-service deben poder cargar cada nombre listado aquí.
     embedding-models: ${TRAINING_EMBEDDING_MODELS:paraphrase-multilingual-MiniLM-L12-v2,paraphrase-multilingual-mpnet-base-v2}
     # URL base pública a la que el worker llama de vuelta (…/webhooks/training-update).
     # Desde dentro de un contenedor no es localhost: usar http://xeye-java-backend:8000
     # (misma red docker) o http://host.docker.internal:8000.
-    callback-base-url: ${BACKEND_URL:http://localhost:8000}
+    callback-base-url: ${BACKEND_URL}
     mock-delay-ms: ${TRAINING_MOCK_DELAY_MS:500}
     # Un training lanzado sin actualización del webhook en este tiempo se marca fallido y su
     # lista vuelve a pending (worker muerto / callback perdido). 0 desactiva el barrido.
@@ -81,22 +107,9 @@ xeye:
       timeout-seconds: ${RUNPOD_TIMEOUT_SECONDS:30}
   search:
     # log -> solo loguea el payload (dev). http -> POST al microservicio de búsqueda.
-    provider: ${SEARCH_PROVIDER:log}
-    url: ${SEARCH_SERVICE_URL:http://localhost:8002}
+    provider: ${SEARCH_PROVIDER}
+    url: ${SEARCH_SERVICE_URL}
     internal-service-name: backend
     # Secreto compartido de las llamadas servidor-a-servidor backend<->search (ambas direcciones):
-    # se envía en pushes/notificaciones y lo exigen nuestros endpoints /internal/search/*.
-    internal-token: ${SEARCH_INTERNAL_TOKEN:dev-internal-token}
-
----
-spring:
-  config:
-    activate:
-      on-profile: dev
-  jpa:
-    show-sql: true
-
-logging:
-  level:
-    com.xeye.backend: DEBUG
-    org.flywaydb: INFO
+    # se envía en pushes/notificaciones y lo exige el filtro de /internal/** (SecurityConfig).
+    internal-token: ${SEARCH_INTERNAL_TOKEN}

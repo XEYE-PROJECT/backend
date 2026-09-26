@@ -1,0 +1,10 @@
+# Configuración de gitleaks (CI y pre-commit). Hereda las reglas por defecto y solo añade
+# allowlists de rutas que contienen ejemplos, nunca secretos reales.
+[extend]
+useDefault = true
+
+[allowlist]
+description = "Documentación de skills de Claude con ejemplos de curl/tokens ficticios"
+paths = [
+  '''\.claude/skills/.*''',
+]

@@ -1,0 +1,33 @@
+# Perfil dev: defaults de desarrollo para todo lo que la configuración base exige por entorno.
+# Se mantiene la forma ${VAR:default} para que un .env / docker-compose.dev.yml pueda
+# sobreescribir cualquiera. NUNCA se activa en producción (la imagen fija prod).
+spring:
+  datasource:
+    url: ${DB_URL:jdbc:mysql://localhost:3306/xeye?allowPublicKeyRetrieval=true&useSSL=false&serverTimezone=UTC&createDatabaseIfNotExist=true}
+    username: ${DB_USERNAME:xeye}
+    password: ${DB_PASSWORD:xeye}
+  jpa:
+    show-sql: true
+    properties:
+      hibernate:
+        format_sql: true
+
+logging:
+  level:
+    com.xeye.backend: DEBUG
+    org.flywaydb: INFO
+
+xeye:
+  jwt:
+    secret: ${JWT_SECRET:dev-only-insecure-secret-change-me-please-0123456789}
+  cors:
+    # Nuxt prefiere 3000 pero puede caer a 3001/3002; 5173 es el frontend Vite antiguo.
+    allowed-origins: ${CORS_ORIGINS:http://localhost:3000,http://localhost:3001,http://localhost:3002,http://localhost:5173}
+  training:
+    provider: ${TRAINING_PROVIDER:mock}
+    webhook-secret: ${TRAINING_WEBHOOK_SECRET:dev-webhook-secret}
+    callback-base-url: ${BACKEND_URL:http://localhost:8000}
+  search:
+    provider: ${SEARCH_PROVIDER:log}
+    url: ${SEARCH_SERVICE_URL:http://localhost:8002}
+    internal-token: ${SEARCH_INTERNAL_TOKEN:dev-internal-token}

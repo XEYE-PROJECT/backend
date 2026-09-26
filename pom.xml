@@ -17,6 +17,7 @@
 	<properties>
 		<java.version>17</java.version>
 		<jjwt.version>0.12.6</jjwt.version>
+		<sentry.version>8.44.1</sentry.version>
 	</properties>
 
 	<dependencies>
@@ -55,6 +56,15 @@
 		<dependency>
 			<groupId>org.springframework.boot</groupId>
 			<artifactId>spring-boot-starter-actuator</artifactId>
+		</dependency>
+
+		<!-- Error tracking: activo solo con SENTRY_DSN (application.yml). Starter específico de
+		     Spring Boot 4 (el "-jakarta" es para Boot 3). Incluye la integración con logback:
+		     todo log.error(..., ex) se convierte en evento. -->
+		<dependency>
+			<groupId>io.sentry</groupId>
+			<artifactId>sentry-spring-boot-4-starter</artifactId>
+			<version>${sentry.version}</version>
 		</dependency>
 
 		<!-- JWT (access tokens) -->
@@ -122,6 +132,13 @@
 			<plugin>
 				<groupId>org.springframework.boot</groupId>
 				<artifactId>spring-boot-maven-plugin</artifactId>
+				<configuration>
+					<!-- `mvn spring-boot:run` = desarrollo. No hay perfil por defecto en
+					     application.yml a propósito: el jar de producción fija prod en su Dockerfile. -->
+					<profiles>
+						<profile>dev</profile>
+					</profiles>
+				</configuration>
 			</plugin>
 		</plugins>
 	</build>

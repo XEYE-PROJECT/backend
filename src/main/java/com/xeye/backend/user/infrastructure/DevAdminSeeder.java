@@ -11,7 +11,9 @@ import org.springframework.boot.CommandLineRunner;
 import org.springframework.context.annotation.Profile;
 import org.springframework.stereotype.Component;
 
-/** Crea un admin al arrancar si no existe; solo en el perfil {@code dev}. */
+import java.util.List;
+
+/** Crea un admin (email ya verificado) al arrancar si no existe; solo en el perfil {@code dev}. */
 @Component
 @Profile("dev")
 public class DevAdminSeeder implements CommandLineRunner {
@@ -37,8 +39,8 @@ public class DevAdminSeeder implements CommandLineRunner {
         if (users.findByEmail(email).isPresent()) {
             return;
         }
-        users.save(new User(null, "Admin", "XEYE", email,
-                passwordHasher.hash(password), Permission.ADMIN, null, null));
+        users.save(new User(null, "Admin", "XEYE", email, passwordHasher.hash(password), Permission.ADMIN,
+                true, "es", 0, 0, null, null, null, false, List.of(), null, null, null, null));
         // La contraseña nunca va al log (aunque sea dev): está en xeye.dev.admin-password / README.
         log.info("Seeded dev admin user '{}'", email);
     }

@@ -1,9 +1,13 @@
 package com.xeye.backend.shared.exception;
 
-/** Autenticación fallida (credenciales o token inválidos) -> 401. */
+/** -> 401. */
 public class UnauthorizedException extends DomainException {
 
     public UnauthorizedException(String message) {
         super(message);
+    }
+
+    public UnauthorizedException(String message, String code) {
+        super(message, code);
     }
 }

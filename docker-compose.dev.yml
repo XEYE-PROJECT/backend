@@ -69,6 +69,12 @@ services:
       SEARCH_PROVIDER: ${SEARCH_PROVIDER:-log}
       SEARCH_SERVICE_URL: ${SEARCH_SERVICE_URL:-http://xeye-search-service:8002}
       SEARCH_INTERNAL_TOKEN: ${SEARCH_INTERNAL_TOKEN:-dev-internal-token}
+      # Cuentas: enlaces de los emails apuntan a la consola local; los emails salen por el log.
+      FRONTEND_URL: ${FRONTEND_URL:-http://localhost:3000}
+      EMAIL_PROVIDER: ${EMAIL_PROVIDER:-log}
+      AUTH_REQUIRE_EMAIL_VERIFICATION: ${AUTH_REQUIRE_EMAIL_VERIFICATION:-true}
+      PASSWORD_BREACH_CHECK: ${PASSWORD_BREACH_CHECK:-none}
+      ADMIN_EMAILS: ${ADMIN_EMAILS:-}
     ports:
       - "${BACKEND_PORT:-8000}:8000"
     extra_hosts:

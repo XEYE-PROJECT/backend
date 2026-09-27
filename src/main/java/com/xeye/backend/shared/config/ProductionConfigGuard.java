@@ -97,6 +97,24 @@ public class ProductionConfigGuard {
         if (!callbackBase.startsWith("https://")) {
             problems.add("BACKEND_URL must be the public https:// URL of this backend (found '" + callbackBase + "')");
         }
+
+        String frontendUrl = env.getProperty("xeye.auth.frontend-url", "");
+        if (!frontendUrl.startsWith("https://")) {
+            problems.add("FRONTEND_URL must be the public https:// URL of the console (found '" + frontendUrl + "')");
+        }
+        String emailProvider = env.getProperty("xeye.email.provider", "");
+        boolean verification = env.getProperty("xeye.auth.require-email-verification", Boolean.class, true);
+        if ("log".equalsIgnoreCase(emailProvider) && verification) {
+            problems.add("EMAIL_PROVIDER=log cannot deliver verification emails in production (use smtp or resend, or set AUTH_REQUIRE_EMAIL_VERIFICATION=false)");
+        }
+        if ("smtp".equalsIgnoreCase(emailProvider)) {
+            if (env.getProperty("spring.mail.username", "").isBlank() || env.getProperty("spring.mail.password", "").isBlank()) {
+                problems.add("SMTP_USERNAME and SMTP_PASSWORD must be set when EMAIL_PROVIDER=smtp");
+            }
+        }
+        if ("resend".equalsIgnoreCase(emailProvider) && env.getProperty("xeye.email.resend-api-key", "").isBlank()) {
+            problems.add("RESEND_API_KEY must be set when EMAIL_PROVIDER=resend");
+        }
         return problems;
     }
 

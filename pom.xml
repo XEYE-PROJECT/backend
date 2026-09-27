@@ -54,6 +54,11 @@
 		<!-- Actuator: /actuator/health (SecurityConfig already permits it; the docker
 		     healthcheck and the deploy gating probe it) -->
 		<dependency>
+			<!-- Email transaccional por SMTP (IONOS): verificación de cuenta, recuperación de contraseña. -->
+			<groupId>org.springframework.boot</groupId>
+			<artifactId>spring-boot-starter-mail</artifactId>
+		</dependency>
+		<dependency>
 			<groupId>org.springframework.boot</groupId>
 			<artifactId>spring-boot-starter-actuator</artifactId>
 		</dependency>

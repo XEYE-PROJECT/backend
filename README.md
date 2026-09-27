@@ -79,17 +79,47 @@ Ver [.env.example](.env.example). Las principales:
 | `SEARCH_PROVIDER` | `log` (solo dev) o `http` |
 | `SEARCH_SERVICE_URL`, `SEARCH_INTERNAL_TOKEN` | URL y secreto compartido (`X-Internal-Token`) del microservicio de búsqueda |
 | `SENTRY_DSN`, `SENTRY_ENVIRONMENT` | Error tracking (vacío = desactivado) |
+| `FRONTEND_URL` | URL pública de la consola (enlaces de los emails, retorno del SSO) |
+| `EMAIL_PROVIDER`, `EMAIL_FROM`, `EMAIL_REPLY_TO` | `log` (dev), `smtp` (IONOS: `SMTP_HOST/PORT/USERNAME/PASSWORD`) o `resend` (`RESEND_API_KEY`) |
+| `AUTH_REQUIRE_EMAIL_VERIFICATION`, `ADMIN_EMAILS` | Verificación obligatoria (true) y emails que pasan a admin al entrar |
+| `AUTH_RATE_*_PER_MINUTE` | Rate limit por IP de `/auth/*` |
+| `PASSWORD_BREACH_CHECK` | `hibp` (prod) o `none` |
+| `CAPTCHA_PROVIDER`, `CAPTCHA_SITE_KEY`, `CAPTCHA_SECRET` | CAPTCHA opcional (Cloudflare Turnstile) |
+| `SSO_GOOGLE_*`, `SSO_MICROSOFT_*` | SSO OIDC; un proveedor se activa con client id + secret |
 
 ## Endpoints
 
-Públicos: `POST /auth/register`, `POST /auth/login`, `GET /actuator/health`.
+Públicos (`/auth/*`, con rate limit por IP y respuestas idénticas exista o no la cuenta):
+
+```
+GET  /auth/config                 qué mostrar (verificación obligatoria, proveedores SSO, CAPTCHA)
+POST /auth/register               202 siempre; envía el email de verificación (no abre sesión)
+POST /auth/login                  {token,user} o {mfaRequired:true,mfaToken}; 403 EMAIL_NOT_VERIFIED,
+                                  429 ACCOUNT_LOCKED tras 5 fallos (bloqueo 1,2,4… min)
+POST /auth/mfa                    {mfaToken, code}: código TOTP o de recuperación -> sesión
+POST /auth/verify-email           {token} del enlace (registro o cambio de email) -> sesión
+POST /auth/resend-verification    {email} -> 202
+POST /auth/forgot-password        {email} -> 202
+POST /auth/reset-password         {token, password}; cierra todas las sesiones
+GET  /auth/sso/{google|microsoft} redirige al proveedor; vuelve a /auth/sso/{p}/callback y de ahí a
+                                  {FRONTEND_URL}/sso/callback?code=…; POST /auth/sso/exchange {token:code}
+POST /auth/logout, /auth/logout-all   (con JWT) revoca este token / todas las sesiones
+GET  /actuator/health
+```
+
 Servidor a servidor (secreto compartido en cabecera, comparado en tiempo constante, 403 si
 falta o no coincide): `POST /webhooks/training-update` (`X-Webhook-Token`, worker de training)
 y `/internal/search/*` (`X-Internal-Token`, search-service; el proxy de producción no los
-publica). El resto requiere cabecera `Authorization: Bearer <token>`:
+publica). El resto requiere cabecera `Authorization: Bearer <token>` (JWT de 60 min con `jti`
+revocable y versión de sesión: cambiar contraseña/email, activar 2FA o "cerrar todas las
+sesiones" invalida los anteriores):
 
 ```
-GET|PUT|DELETE /users/me
+GET|PUT|DELETE /users/me          (PUT: name, surname, locale)
+PUT /users/me/email               {email, currentPassword}: enlace al nuevo buzón; se aplica al confirmar
+PUT /users/me/password            {currentPassword, newPassword} -> token nuevo (los demás se cierran)
+POST /users/me/mfa/setup|enable|disable
+GET /admin/users, GET|PUT|DELETE /admin/users/{id}, POST /admin/users/{id}/logout-all   (ROLE_ADMIN)
 GET|POST /api-keys        PUT|DELETE /api-keys/{id}   (POST es la ÚNICA respuesta con la clave completa;
                                                       después solo existe su hash y se muestra el prefijo)
 GET|POST /lists           GET|PUT|DELETE /lists/{id}
@@ -100,9 +130,11 @@ GET /lists/{listId}/trainings        GET /trainings/{id}
 Ejemplo:
 
 ```bash
-TOKEN=$(curl -s -X POST localhost:8080/auth/register -H 'Content-Type: application/json' \
-  -d '{"name":"Joan","surname":"M","email":"joan@test.com","password":"password123"}' \
-  | python3 -c 'import sys,json;print(json.load(sys.stdin)["token"])')
+# Registro (202) -> el enlace de verificación sale en el log (EMAIL_PROVIDER=log) -> verificar abre sesión
+curl -s -X POST localhost:8000/auth/register -H 'Content-Type: application/json' \
+  -d '{"name":"Joan","surname":"M","email":"joan@test.com","password":"correct horse battery"}'
+TOKEN=$(curl -s -X POST localhost:8000/auth/verify-email -H 'Content-Type: application/json' \
+  -d '{"token":"<token del enlace del log>"}' | python3 -c 'import sys,json;print(json.load(sys.stdin)["token"])')
 
 curl -s -X POST localhost:8080/lists -H "Authorization: Bearer $TOKEN" \
   -H 'Content-Type: application/json' -d '{"name":"Productos","description":"...","public":true}'
@@ -111,7 +143,7 @@ curl -s -X POST localhost:8080/lists -H "Authorization: Bearer $TOKEN" \
 ## Tests
 
 ```bash
-mvn test     # tests unitarios (dominio, guard de producción, filtro de secreto compartido; sin BD)
+mvn test     # tests unitarios (dominio, política de contraseñas, TOTP, JWT, rate limiter, guard de producción; sin BD)
 ```
 
 ## Estructura

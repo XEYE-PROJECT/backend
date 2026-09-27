@@ -1,9 +1,13 @@
 package com.xeye.backend.shared.exception;
 
-/** Petición semánticamente inválida más allá del bean validation -> 400. */
+/** -> 400. */
 public class BadRequestException extends DomainException {
 
     public BadRequestException(String message) {
         super(message);
+    }
+
+    public BadRequestException(String message, String code) {
+        super(message, code);
     }
 }

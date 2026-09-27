@@ -21,6 +21,19 @@ spring:
     open-in-view: false
   flyway:
     enabled: true
+  # SMTP (solo con EMAIL_PROVIDER=smtp). IONOS: smtp.ionos.es, 587 STARTTLS, usuario = buzón completo.
+  mail:
+    host: ${SMTP_HOST:smtp.ionos.es}
+    port: ${SMTP_PORT:587}
+    username: ${SMTP_USERNAME:}
+    password: ${SMTP_PASSWORD:}
+    properties:
+      mail.smtp.auth: true
+      mail.smtp.starttls.enable: true
+      mail.smtp.starttls.required: true
+      mail.smtp.connectiontimeout: 5000
+      mail.smtp.timeout: 10000
+      mail.smtp.writetimeout: 10000
 
 server:
   port: ${SERVER_PORT:8000}
@@ -34,6 +47,11 @@ management:
   endpoint:
     health:
       show-details: never
+  health:
+    # El starter de mail añadiría un indicador que abre una conexión SMTP en cada health check
+    # (y pondría el servicio DOWN si IONOS no responde): el email no es crítico para servir tráfico.
+    mail:
+      enabled: false
 
 # Sentry: desactivado si SENTRY_DSN está vacío (dev no necesita nada). Solo errores
 # (sin tracing); los logs a nivel ERROR se convierten en eventos vía logback.
@@ -57,6 +75,48 @@ xeye:
   cors:
     # Orígenes exactos del frontend, separados por comas (allowCredentials: sin comodines).
     allowed-origins: ${CORS_ORIGINS}
+  auth:
+    # URL pública de la consola: enlaces de los emails (verificación, recuperación) y retorno del SSO.
+    frontend-url: ${FRONTEND_URL}
+    # false = las cuentas nuevas pueden iniciar sesión sin verificar el email (solo dev/pruebas).
+    require-email-verification: ${AUTH_REQUIRE_EMAIL_VERIFICATION:true}
+    # Emails (separados por comas) que se promocionan a admin al iniciar sesión: bootstrap del primer admin.
+    admin-emails: ${ADMIN_EMAILS:}
+    # Nombre que muestran las apps de 2FA (Google Authenticator, 1Password…).
+    mfa-issuer: ${MFA_ISSUER:XEYE}
+    rate-limit:
+      # Peticiones por minuto y por IP a los endpoints públicos de auth; <= 0 desactiva.
+      login-per-minute: ${AUTH_RATE_LOGIN_PER_MINUTE:10}
+      register-per-minute: ${AUTH_RATE_REGISTER_PER_MINUTE:5}
+      password-reset-per-minute: ${AUTH_RATE_PASSWORD_RESET_PER_MINUTE:5}
+    captcha:
+      # none | turnstile (Cloudflare Turnstile: site key pública para la consola + secret para verificar).
+      provider: ${CAPTCHA_PROVIDER:none}
+      site-key: ${CAPTCHA_SITE_KEY:}
+      secret: ${CAPTCHA_SECRET:}
+    password:
+      # hibp = Have I Been Pwned (k-anonimato, falla abierto si no hay red) | none.
+      breach-check: ${PASSWORD_BREACH_CHECK:hibp}
+    sso:
+      # Un proveedor se activa cuando tiene client id + secret. Redirect URI a registrar en el
+      # proveedor: {BACKEND_URL}/auth/sso/{google|microsoft}/callback
+      google:
+        client-id: ${SSO_GOOGLE_CLIENT_ID:}
+        client-secret: ${SSO_GOOGLE_CLIENT_SECRET:}
+      microsoft:
+        client-id: ${SSO_MICROSOFT_CLIENT_ID:}
+        client-secret: ${SSO_MICROSOFT_CLIENT_SECRET:}
+        # common (cualquier cuenta), organizations, consumers o un tenant id concreto.
+        tenant: ${SSO_MICROSOFT_TENANT:common}
+  email:
+    # log (imprime el email y sus enlaces en el log; dev) | smtp (buzón IONOS, ver spring.mail.*
+    # más abajo) | resend (API de Resend).
+    provider: ${EMAIL_PROVIDER}
+    # Remitente: debe ser un buzón del dominio autorizado por el proveedor (noreply@xeye.es en IONOS).
+    from: ${EMAIL_FROM:XEYE <noreply@xeye.es>}
+    # Buzón que recibe las respuestas de los usuarios.
+    reply-to: ${EMAIL_REPLY_TO:info@xeye.es}
+    resend-api-key: ${RESEND_API_KEY:}
   training:
     # Cómo se ejecuta un training. Todos los providers reciben el mismo payload y responden por
     # el mismo webhook — solo cambia *dónde* corre el contenedor.

@@ -2,8 +2,11 @@ package com.xeye.backend.user.infrastructure.persistence;
 
 import com.xeye.backend.user.application.port.out.UserRepository;
 import com.xeye.backend.user.domain.model.User;
+import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Sort;
 import org.springframework.stereotype.Component;
 
+import java.util.List;
 import java.util.Optional;
 
 /** Adapta Spring Data JPA al puerto {@link UserRepository}. */
@@ -27,8 +30,24 @@ public class UserPersistenceAdapter implements UserRepository {
     }
 
     @Override
+    public Optional<User> findBySso(String provider, String subject) {
+        return jpa.findBySsoProviderAndSsoSubject(provider, subject).map(UserMapper::toDomain);
+    }
+
+    @Override
     public boolean existsByEmail(String email) {
         return jpa.existsByEmail(email);
+    }
+
+    @Override
+    public List<User> findPage(int offset, int limit) {
+        int page = offset / limit;
+        return jpa.findAll(PageRequest.of(page, limit, Sort.by("id"))).stream().map(UserMapper::toDomain).toList();
+    }
+
+    @Override
+    public long count() {
+        return jpa.count();
     }
 
     @Override

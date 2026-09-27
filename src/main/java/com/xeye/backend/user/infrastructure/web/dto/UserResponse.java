@@ -10,6 +10,11 @@ public record UserResponse(
         String surname,
         String email,
         String permission,
+        boolean emailVerified,
+        String locale,
+        boolean mfaEnabled,
+        String ssoProvider,
+        Instant lastLoginAt,
         Instant createdAt,
         Instant updatedAt) {
 
@@ -20,6 +25,11 @@ public record UserResponse(
                 user.surname(),
                 user.email(),
                 user.permission().value(),
+                user.emailVerified(),
+                user.locale(),
+                user.totpEnabled(),
+                user.ssoProvider(),
+                user.lastLoginAt(),
                 user.createdAt(),
                 user.updatedAt());
     }

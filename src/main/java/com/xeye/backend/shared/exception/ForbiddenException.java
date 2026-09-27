@@ -1,9 +1,13 @@
 package com.xeye.backend.shared.exception;
 
-/** El llamante está autenticado pero no puede tocar este recurso -> 403. */
+/** -> 403. */
 public class ForbiddenException extends DomainException {
 
     public ForbiddenException(String message) {
         super(message);
+    }
+
+    public ForbiddenException(String message, String code) {
+        super(message, code);
     }
 }

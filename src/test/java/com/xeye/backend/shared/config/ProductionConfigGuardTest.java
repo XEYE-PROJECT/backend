@@ -22,7 +22,34 @@ class ProductionConfigGuardTest {
                 .withProperty("xeye.training.provider", "runpod")
                 .withProperty("xeye.search.provider", "http")
                 .withProperty("xeye.cors.allowed-origins", "https://xeye.es,https://www.xeye.es")
-                .withProperty("xeye.training.callback-base-url", "https://backend.xeye.es");
+                .withProperty("xeye.training.callback-base-url", "https://backend.xeye.es")
+                .withProperty("xeye.auth.frontend-url", "https://xeye.es")
+                .withProperty("xeye.email.provider", "resend")
+                .withProperty("xeye.email.resend-api-key", "re_test_key");
+    }
+
+    @Test
+    void emailAndFrontendConfigurationIsChecked() {
+        List<String> problems = ProductionConfigGuard.check(validEnvironment()
+                .withProperty("xeye.auth.frontend-url", "http://localhost:3000")
+                .withProperty("xeye.email.provider", "log"));
+        assertEquals(2, problems.size(), String.join("\n", problems));
+        assertTrue(problems.stream().anyMatch(p -> p.startsWith("FRONTEND_URL must be the public https://")));
+        assertTrue(problems.stream().anyMatch(p -> p.startsWith("EMAIL_PROVIDER=log")));
+
+        // Sin verificación obligatoria, el provider log se tolera; resend sin clave no.
+        assertEquals(List.of(), ProductionConfigGuard.check(validEnvironment()
+                .withProperty("xeye.email.provider", "log")
+                .withProperty("xeye.auth.require-email-verification", "false")));
+        assertEquals(1, ProductionConfigGuard.check(validEnvironment()
+                .withProperty("xeye.email.resend-api-key", "")).size());
+        // smtp exige usuario y contraseña del buzón.
+        assertEquals(1, ProductionConfigGuard.check(validEnvironment()
+                .withProperty("xeye.email.provider", "smtp")).size());
+        assertEquals(List.of(), ProductionConfigGuard.check(validEnvironment()
+                .withProperty("xeye.email.provider", "smtp")
+                .withProperty("spring.mail.username", "noreply@xeye.es")
+                .withProperty("spring.mail.password", "s3cret")));
     }
 
     @Test

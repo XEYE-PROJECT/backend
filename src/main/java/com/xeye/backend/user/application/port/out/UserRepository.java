@@ -2,6 +2,7 @@ package com.xeye.backend.user.application.port.out;
 
 import com.xeye.backend.user.domain.model.User;
 
+import java.util.List;
 import java.util.Optional;
 
 /** Puerto de salida de persistencia de usuarios; devuelve dominio, nunca entidades JPA. */
@@ -11,7 +12,14 @@ public interface UserRepository {
 
     Optional<User> findByEmail(String email);
 
+    Optional<User> findBySso(String provider, String subject);
+
     boolean existsByEmail(String email);
+
+    /** Página ordenada por id (administración). */
+    List<User> findPage(int offset, int limit);
+
+    long count();
 
     User save(User user);
 

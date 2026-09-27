@@ -1,4 +1,5 @@
 package com.xeye.backend.user.application.command;
 
-public record RegisterUserCommand(String name, String surname, String email, String rawPassword) {
+public record RegisterUserCommand(String name, String surname, String email, String rawPassword,
+                                  String locale, String captchaToken) {
 }

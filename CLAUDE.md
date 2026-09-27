@@ -65,6 +65,25 @@ Scope is deliberately smaller than the Python original (university project): no 
   `application-prod.yml` + `ProductionConfigGuard` (`@Profile("prod")`) abort startup on dev or
   weak values. The production `Dockerfile` sets `SPRING_PROFILES_ACTIVE=prod`. Properties records
   are `@Validated`.
+- **Accounts (module `user`):** `AuthService` (register/login/verify/reset/MFA/SSO/logout),
+  `UserService` (own account), `AdminUserService` (`/admin/**`, `@PreAuthorize("hasRole('ADMIN')")`
+  + `@EnableMethodSecurity`). Register never auto-logs in and always answers 202 (no email
+  enumeration; an existing address gets an "account exists" email). Login requires a verified
+  email (`AUTH_REQUIRE_EMAIL_VERIFICATION`), runs BCrypt even for unknown emails, and applies a
+  **progressive per-account lock** persisted on `users` (5 failures → 1, 2, 4… min, capped 60;
+  `@Transactional(noRollbackFor = DomainException)` so the counter survives the 401). IP rate limit
+  for `POST /auth/*` lives in `AuthRateLimitFilter` (in-memory fixed window). **Sessions:** JWTs
+  carry `jti` + `ver` + `purpose=access`; `JwtAuthenticationFilter` rejects revoked jtis
+  (`revoked_tokens`, cached in memory) and stale `users.token_version` (bumped by password/email
+  change, 2FA enable, logout-all). Special-purpose JWTs (`mfa`, `sso_state`) never authenticate.
+  One-time email tokens (`user_tokens`, SHA-256 hashed, 24 h verify / 1 h reset & change-email)
+  are issued by `AccountTokenService`; emails go through the `EmailSender` port (`log` in dev,
+  `smtp` = IONOS `noreply@xeye.es` with reply-to `info@xeye.es`, or `resend`). 2FA = RFC 6238 TOTP
+  (`shared/security/Totp`, pure Java) + 10 hashed recovery codes. SSO = hand-rolled OIDC
+  authorization-code flow in `user/infrastructure/sso/OidcClient` (Google/Microsoft, JWKS via jjwt),
+  stateless signed `state`, one-time exchange code so the JWT never travels in a URL. Security
+  events go to the `xeye.audit` logger (`AuthAuditLog`, emails masked). `ADMIN_EMAILS` promotes
+  listed accounts to admin at login (first-admin bootstrap; `DevAdminSeeder` only in dev).
 - **API keys are hashed:** `api_keys.key_hash` (SHA-256 hex, `ApiKeyHasher`) + `key_prefix`;
   the raw value exists only in the `POST /api-keys` response (`ApiKeyCreatedResponse`). The
   search bootstrap/sync carry `keyHash`, never the key. Migration V6 hashed existing rows with
@@ -189,6 +208,8 @@ Hot reload: DevTools watches `target/classes`. Saving a file in an IDE that auto
 `xeye.training.{provider,webhook-secret,callback-base-url,mock-delay-ms,embedding-models,stalled-after-minutes,max-concurrent,docker.*,runpod.*}`,
 `xeye.search.{provider,url,internal-service-name,internal-token}` (`SearchProperties` lives in
 `shared/config` — the `training` and `search` modules both use it),
+`xeye.auth.*` (`AuthProperties`: `FRONTEND_URL`, verification, admin emails, rate limits, captcha,
+breach check, SSO), `xeye.email.*` (`EmailProperties` + `spring.mail.*` for `smtp`),
 `DB_URL/DB_USERNAME/DB_PASSWORD`, `SERVER_PORT`, `SENTRY_DSN` (empty = off; Sentry Boot 4 starter).
 Profile `dev` (must be activated explicitly — `mvn spring-boot:run` does it): mock training,
 log search, verbose logs, seeds an admin user (`admin@xeye.local` / `admin1234`, see
@@ -196,10 +217,14 @@ log search, verbose logs, seeds an admin user (`admin@xeye.local` / `admin1234`,
 
 ## API surface
 
-Public: `POST /auth/register`, `POST /auth/login`, `POST /webhooks/training-update`,
-`/internal/search/*` (`X-Internal-Token`, search-service only).
+Public: `GET /auth/config`, `POST /auth/{register,login,mfa,verify-email,resend-verification,
+forgot-password,reset-password,sso/exchange}`, `GET /auth/sso/{provider}[/callback]`,
+`POST /webhooks/training-update`, `/internal/search/*` (`X-Internal-Token`, search-service only).
 Authenticated (`Authorization: Bearer <jwt>`):
-`GET|PUT|DELETE /users/me` · `GET|POST /api-keys`, `PUT|DELETE /api-keys/{id}` ·
+`POST /auth/logout`, `POST /auth/logout-all` · `GET|PUT|DELETE /users/me`, `PUT /users/me/email`,
+`PUT /users/me/password`, `POST /users/me/mfa/{setup,enable,disable}` ·
+`GET /admin/users`, `GET|PUT|DELETE /admin/users/{id}`, `POST /admin/users/{id}/logout-all` (admin) ·
+`GET|POST /api-keys`, `PUT|DELETE /api-keys/{id}` ·
 (`POST /api-keys` is the only response carrying the raw key) ·
 `GET|POST /lists`, `GET|PUT|DELETE /lists/{id}` ·
 `GET|POST /lists/{listId}/elements`, `POST /lists/{listId}/elements/import`, `PUT|DELETE /elements/{id}` ·

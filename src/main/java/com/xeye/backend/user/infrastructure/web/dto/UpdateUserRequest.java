@@ -1,11 +1,10 @@
 package com.xeye.backend.user.infrastructure.web.dto;
 
-import jakarta.validation.constraints.Email;
+import jakarta.validation.constraints.Size;
 
-/** Todos los campos son opcionales; solo se aplican los no nulos. */
+/** Perfil: campos opcionales, solo se aplican los no nulos. Email y contraseña tienen endpoints propios. */
 public record UpdateUserRequest(
-        String name,
-        String surname,
-        @Email String email,
-        String password) {
+        @Size(max = 100) String name,
+        @Size(max = 100) String surname,
+        @Size(max = 5) String locale) {
 }

@@ -6,5 +6,12 @@ package com.xeye.backend.shared.event;
  * el commit. Vive en {@code shared} para que publicadores y listener dependan solo de shared,
  * sin ciclos de compilación entre módulos.
  */
-public record TrainingRequestedEvent(Long listId, Long userId, String reason) {
+public record TrainingRequestedEvent(Long listId, Long userId, String reason) implements DomainEvent {
+
+    public static final String TYPE = "TRAINING_REQUESTED";
+
+    @Override
+    public String type() {
+        return TYPE;
+    }
 }

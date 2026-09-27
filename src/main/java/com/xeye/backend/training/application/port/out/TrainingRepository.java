@@ -1,14 +1,18 @@
 package com.xeye.backend.training.application.port.out;
 
+import com.xeye.backend.shared.paging.Page;
+import com.xeye.backend.shared.paging.Paging;
 import com.xeye.backend.training.domain.model.Training;
 
 import java.time.Instant;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 
 public interface TrainingRepository {
 
-    List<Training> findByListIdAndUserId(Long listId, Long userId);
+    /** Historial de la lista, los más recientes primero. Nunca carga los embeddings. */
+    Page<Training> findByListIdAndUserId(Long listId, Long userId, Paging paging);
 
     Optional<Training> findByIdAndUserId(Long id, Long userId);
 
@@ -23,17 +27,34 @@ public interface TrainingRepository {
     /** Todos los trainings PENDING de las listas del usuario (para los avisos de reentrenar). */
     List<Training> findPendingByUserId(Long userId);
 
-    /** Trainings lanzados sin terminar (ver {@code TrainingStatus.isRunning}) sin actualizar desde el corte. */
-    List<Training> findRunningUpdatedBefore(Instant cutoff);
+    /** Runs lanzados ({@code TrainingStatus.isLaunched}) cuyo último latido es anterior al corte. */
+    List<Training> findLaunchedWithHeartbeatBefore(Instant cutoff);
 
-    /** ¿Tiene la lista un run lanzado sin terminar? (una lista solo admite un run a la vez). */
-    boolean existsRunningByListId(Long listId);
+    /** ¿Tiene la lista un run en cola o lanzado? (una lista solo admite uno a la vez). */
+    boolean existsInProgressByListId(Long listId);
 
-    /** Runs lanzados sin terminar en todo el backend (para el tope global de paralelismo). */
-    long countRunning();
+    /** Runs lanzados en todo el backend (ocupan hueco del cupo global). */
+    long countLaunched();
+
+    /** Runs lanzados por usuario (para la equidad de la cola). */
+    Map<Long, Long> countLaunchedByUser();
+
+    /** La cola: trainings QUEUED, los más antiguos primero. */
+    List<Training> findQueued();
+
+    /** Posición 1-based en la cola por antigüedad (cuántos QUEUED tienen id menor + 1). */
+    int queuePosition(Long trainingId);
 
     Training save(Training training);
 
     /** Pone {@code in_use = false} en todos los trainings de la lista (antes de activar uno nuevo). */
     void clearInUseForList(Long listId);
+
+    /** Embeddings de un run (tabla aparte; solo se cargan para el push al buscador y la API interna). */
+    Optional<String> findEmbeddings(Long trainingId);
+
+    void saveEmbeddings(Long trainingId, String embeddingsData);
+
+    /** Borra hasta {@code batchSize} runs terminados, no en uso, más antiguos que el corte; devuelve cuántos. */
+    int deleteTerminalNotInUseBefore(Instant cutoff, int batchSize);
 }

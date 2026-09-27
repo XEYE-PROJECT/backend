@@ -1,5 +1,7 @@
 package com.xeye.backend.training.infrastructure.web;
 
+import com.xeye.backend.shared.paging.PageResponse;
+import com.xeye.backend.shared.paging.Paging;
 import com.xeye.backend.shared.security.AuthenticatedUser;
 import com.xeye.backend.training.application.port.in.TrainingLaunchUseCases;
 import com.xeye.backend.training.application.port.in.TrainingUseCases;
@@ -18,7 +20,7 @@ import org.springframework.web.bind.annotation.RestController;
 
 import java.util.List;
 
-/** Endpoints de training: lecturas de historial/detalle, pendientes y el lanzamiento manual. */
+/** Endpoints de training: lecturas de historial/detalle, pendientes y el lanzamiento manual (encolado). */
 @RestController
 public class TrainingController {
 
@@ -33,12 +35,14 @@ public class TrainingController {
         this.properties = properties;
     }
 
+    /** Historial de la lista paginado ({@code ?offset&limit}, máx. 200), los más recientes primero. */
     @GetMapping("/lists/{listId}/trainings")
-    public List<TrainingResponse> listByList(@AuthenticationPrincipal AuthenticatedUser current,
-                                             @PathVariable Long listId) {
-        return trainings.listByList(current.id(), listId).stream()
-                .map(listed -> TrainingResponse.from(listed.training(), listed.usable()))
-                .toList();
+    public PageResponse<TrainingResponse> listByList(@AuthenticationPrincipal AuthenticatedUser current,
+                                                     @PathVariable Long listId,
+                                                     @RequestParam(required = false) Integer offset,
+                                                     @RequestParam(required = false) Integer limit) {
+        return PageResponse.from(trainings.listByList(current.id(), listId, Paging.of(offset, limit)),
+                TrainingResponse::from);
     }
 
     /**
@@ -76,7 +80,7 @@ public class TrainingController {
     /**
      * Reentrena la lista ya mismo con el modelo elegido (body opcional): reutiliza el training
      * pendiente si una edición lo marcó, o crea uno al vuelo — el usuario siempre puede
-     * relanzar, aunque nada haya cambiado.
+     * relanzar, aunque nada haya cambiado. El run entra en cola y arranca cuando hay hueco.
      */
     @PostMapping("/lists/{listId}/trainings")
     public TrainingResponse retrain(@AuthenticationPrincipal AuthenticatedUser current,
@@ -85,17 +89,18 @@ public class TrainingController {
         String embeddingModel = request == null ? null : request.embeddingModel();
         boolean regenerate = request != null && request.regenerate();
         boolean noDescriptions = request != null && request.skipDescriptions();
-        return TrainingResponse.from(
-                launches.retrain(current.id(), listId, embeddingModel, regenerate, noDescriptions));
+        launches.retrain(current.id(), listId, embeddingModel, regenerate, noDescriptions);
+        return latestOf(current, listId);
     }
 
     /** Activa este training como el modelo en uso de la lista (debe cubrir sus elementos actuales). */
     @PostMapping("/trainings/{id}/use")
     public TrainingResponse use(@AuthenticationPrincipal AuthenticatedUser current, @PathVariable Long id) {
-        return TrainingResponse.from(trainings.use(current.id(), id), true);
+        trainings.use(current.id(), id);
+        return TrainingResponse.from(trainings.get(current.id(), id));
     }
 
-    /** Lanza un training pendiente con el modelo de embedding elegido (body opcional). */
+    /** Encola un training pendiente con el modelo de embedding elegido (body opcional). */
     @PostMapping("/trainings/{id}/launch")
     public TrainingResponse launch(@AuthenticationPrincipal AuthenticatedUser current,
                                    @PathVariable Long id,
@@ -103,7 +108,15 @@ public class TrainingController {
         String embeddingModel = request == null ? null : request.embeddingModel();
         boolean regenerate = request != null && request.regenerate();
         boolean noDescriptions = request != null && request.skipDescriptions();
-        return TrainingResponse.from(
-                launches.launch(current.id(), id, embeddingModel, regenerate, noDescriptions));
+        launches.launch(current.id(), id, embeddingModel, regenerate, noDescriptions);
+        return TrainingResponse.from(trainings.get(current.id(), id));
+    }
+
+    /** El run recién encolado/lanzado es el más reciente de la lista. */
+    private TrainingResponse latestOf(AuthenticatedUser current, Long listId) {
+        return trainings.listByList(current.id(), listId, Paging.of(0, 1)).items().stream()
+                .map(TrainingResponse::from)
+                .findFirst()
+                .orElseThrow();
     }
 }

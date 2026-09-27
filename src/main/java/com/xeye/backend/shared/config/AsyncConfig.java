@@ -8,9 +8,10 @@ import org.springframework.scheduling.annotation.EnableScheduling;
 import org.springframework.scheduling.concurrent.ThreadPoolTaskExecutor;
 
 /**
- * Executor de fondo del flujo de training: el lanzamiento (llamada HTTP saliente) y la
- * finalización simulada del provider mock corren fuera del hilo de la petición. El scheduling
- * alimenta el barrido de trainings estancados ({@code TrainingStalledSweeper}).
+ * Executor de fondo del provider mock de training (simula la finalización fuera del hilo de la
+ * petición). El scheduling alimenta el despachador de la cola de trainings, el barrido de
+ * estancados, el relé del outbox y las retenciones. Los eventos hacia el buscador ya no van por
+ * {@code @Async}: se persisten en el outbox y los entrega su relé.
  */
 @Configuration
 @EnableAsync
@@ -24,18 +25,6 @@ public class AsyncConfig {
         executor.setMaxPoolSize(4);
         executor.setQueueCapacity(50);
         executor.setThreadNamePrefix("training-");
-        executor.initialize();
-        return executor;
-    }
-
-    /** Notificaciones fire-and-forget de cambios al microservicio de búsqueda (ver módulo search). */
-    @Bean(name = "searchSyncTaskExecutor")
-    public TaskExecutor searchSyncTaskExecutor() {
-        ThreadPoolTaskExecutor executor = new ThreadPoolTaskExecutor();
-        executor.setCorePoolSize(1);
-        executor.setMaxPoolSize(2);
-        executor.setQueueCapacity(200);
-        executor.setThreadNamePrefix("search-sync-");
         executor.initialize();
         return executor;
     }

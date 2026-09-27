@@ -2,10 +2,12 @@ package com.xeye.backend.search.application.port.in;
 
 import com.xeye.backend.search.application.command.RecordSearchCommand;
 import com.xeye.backend.search.domain.model.SearchLog;
+import com.xeye.backend.shared.paging.Page;
+import com.xeye.backend.shared.paging.Paging;
 
 import java.util.List;
 
-/** Puerto de entrada: ingesta de logs de búsqueda (API interna) y su lectura por el propietario (REST). */
+/** Puerto de entrada: ingesta de logs de búsqueda (API interna), su lectura por el propietario y la retención. */
 public interface SearchLogUseCases {
 
     /**
@@ -14,6 +16,9 @@ public interface SearchLogUseCases {
      */
     int recordAll(List<RecordSearchCommand> commands);
 
-    /** Últimos logs de una lista del usuario, los más recientes primero. */
-    List<SearchLog> listByList(Long userId, Long listId, int limit);
+    /** Historial de una lista del usuario, los más recientes primero. */
+    Page<SearchLog> listByList(Long userId, Long listId, Paging paging);
+
+    /** Borra el historial más antiguo que la retención configurada; devuelve cuántas filas borró. */
+    int purgeExpired();
 }

@@ -2,9 +2,16 @@ package com.xeye.backend.list.infrastructure.persistence;
 
 import com.xeye.backend.list.application.port.out.ListRepository;
 import com.xeye.backend.list.domain.model.ItemList;
+import com.xeye.backend.shared.paging.Page;
+import com.xeye.backend.shared.paging.Paging;
+import org.springframework.data.domain.Limit;
+import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Component;
 
+import java.util.Collection;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 
 @Component
@@ -17,8 +24,10 @@ public class ListPersistenceAdapter implements ListRepository {
     }
 
     @Override
-    public List<ItemList> findByUserId(Long userId) {
-        return jpa.findByUserIdOrderByIdAsc(userId).stream().map(ListMapper::toDomain).toList();
+    public Page<ItemList> findByUserId(Long userId, String query, Boolean isPublic, Paging paging) {
+        var result = jpa.search(userId, query, isPublic, PageRequest.of(paging.pageNumber(), paging.limit()));
+        return new Page<>(result.getContent().stream().map(ListMapper::toDomain).toList(),
+                result.getTotalElements(), paging.offset(), paging.limit());
     }
 
     @Override
@@ -32,8 +41,21 @@ public class ListPersistenceAdapter implements ListRepository {
     }
 
     @Override
-    public List<ItemList> findAll() {
-        return jpa.findAll().stream().map(ListMapper::toDomain).toList();
+    public List<ItemList> findAfterId(long afterId, int limit) {
+        return jpa.findByIdGreaterThanOrderByIdAsc(afterId, Limit.of(limit)).stream()
+                .map(ListMapper::toDomain).toList();
+    }
+
+    @Override
+    public Map<Long, Long> countElements(Collection<Long> listIds) {
+        if (listIds.isEmpty()) {
+            return Map.of();
+        }
+        Map<Long, Long> counts = new HashMap<>();
+        for (Object[] row : jpa.countElementsByListIds(listIds)) {
+            counts.put(((Number) row[0]).longValue(), ((Number) row[1]).longValue());
+        }
+        return counts;
     }
 
     @Override

@@ -1,13 +1,13 @@
 package com.xeye.backend.apikey.application.port.in;
 
 import com.xeye.backend.apikey.domain.model.ApiKey;
-
-import java.util.List;
+import com.xeye.backend.shared.paging.Page;
+import com.xeye.backend.shared.paging.Paging;
 
 /** Puerto de entrada: CRUD de las API keys de un usuario, siempre acotado al propietario. */
 public interface ApiKeyUseCases {
 
-    List<ApiKey> listForUser(Long userId);
+    Page<ApiKey> listForUser(Long userId, Paging paging);
 
     /** Crea la clave y devuelve su valor en claro: la única vez que existe fuera del hash. */
     CreatedApiKey create(Long userId, String name);

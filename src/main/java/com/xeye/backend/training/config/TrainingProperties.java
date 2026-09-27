@@ -23,13 +23,16 @@ public record TrainingProperties(
          *  nombre debe poder cargarlo sentence-transformers tanto en el worker como en el
          *  search-service (ambos los hornean en sus imágenes). */
         @NotEmpty List<String> embeddingModels,
-        /** Un training lanzado sin actualización del webhook en este tiempo se da por estancado
-         *  y se marca fallido (su lista vuelve a pending). 0 desactiva el barrido. */
+        /** Un training lanzado sin latido del worker en este tiempo se da por estancado y se
+         *  marca fallido (su lista vuelve a pending). 0 desactiva el barrido. */
         long stalledAfterMinutes,
-        /** Máximo de trainings corriendo a la vez en todo el backend, para no saturar la
-         *  máquina que ejecuta los workers; los lanzamientos que lo superarían se rechazan
-         *  con 409. {@code <= 0} desactiva el límite. */
+        /** Máximo de trainings lanzados a la vez en todo el backend; los demás esperan en cola.
+         *  {@code <= 0} desactiva el límite. */
         int maxConcurrent,
+        /** Máximo de trainings lanzados a la vez por usuario (equidad de la cola). {@code <= 0} = sin límite. */
+        int maxConcurrentPerUser,
+        /** Días que se conservan los runs terminados que no son el modelo en uso. 0 = siempre. */
+        int retentionDays,
         Pricing pricing,
         Docker docker,
         RunPod runpod) {
@@ -56,6 +59,7 @@ public record TrainingProperties(
                          List<String> env, String gpus, String dockerBinary) {
     }
 
+    /** {@code timeoutSeconds}: timeout de lectura del {@code POST /run} (el job corre asíncrono y responde por webhook). */
     public record RunPod(String apiKey, String endpointId, int timeoutSeconds) {
     }
 

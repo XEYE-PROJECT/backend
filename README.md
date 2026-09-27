@@ -125,14 +125,33 @@ GET /admin/users, GET|PUT|DELETE /admin/users/{id}, POST /admin/users/{id}/logou
                                   búsquedas/min de la cuenta, compartido por todas sus API keys)
 GET|POST /api-keys        PUT|DELETE /api-keys/{id}   (POST es la ÚNICA respuesta con la clave completa;
                                                       después solo existe su hash y se muestra el prefijo)
-GET|POST /lists           GET|PUT|DELETE /lists/{id}
+GET|POST /lists           GET|PUT|DELETE /lists/{id}   (GET /lists admite ?q= y ?public=; cada lista trae elementCount)
 POST /lists/{listId}/search          playground de la consola: {searchTerm, limit?, includeScoreBreakdown?}
                                      -> el backend reenvía al buscador por la red interna (también
                                      listas privadas; la API key nunca pasa por el navegador)
-GET|POST /lists/{listId}/elements    PUT|DELETE /elements/{id}
-GET /lists/{listId}/trainings        GET /trainings/{id}
+GET|POST /lists/{listId}/elements    PUT|DELETE /elements/{id}   (GET admite ?q=; POST …/elements/import por lotes)
+GET /lists/{listId}/trainings        GET /trainings/{id}, POST /lists/{listId}/trainings (encola), /trainings/{id}/launch|use
 GET /lists/{listId}/searches         historial de búsquedas por API key
 ```
+
+**Paginación.** Todos los listados (`/lists`, `/lists/{id}/elements`, `/lists/{id}/trainings`,
+`/api-keys`, `/lists/{id}/searches`, `/admin/users`) aceptan `?offset=&limit=` (`limit` ≤ 200, 50 por
+defecto) y responden `{items, total, offset, limit}`. La API interna del buscador pagina por clave
+(`GET /internal/search/bootstrap?limit=` + `/internal/search/api-keys|lists?afterId=&limit=`).
+
+**Errores.** Siempre JSON `{status, error, message, code, details?}` con un `code` de máquina:
+`VALIDATION_FAILED` (400, con `details` por campo), `MALFORMED_BODY`, `INVALID_PARAMETER`,
+`NOT_FOUND`, `METHOD_NOT_ALLOWED` (405 + `Allow`), `REQUEST_TOO_LARGE` (413; 1 MB por defecto,
+16 MB en la importación, 256 MB en el webhook), `CONCURRENT_MODIFICATION` (409, bloqueo
+optimista en listas/elementos/trainings), `DATA_CONFLICT` (409), `RATE_LIMITED` (429 +
+`Retry-After`), `SERVICE_UNAVAILABLE` (503), `INTERNAL_ERROR` (500, sin detalles).
+
+**Cola de entrenamientos.** Lanzar un training lo pone en `queued`; el despachador arranca los
+runs cuando hay hueco (`TRAINING_MAX_CONCURRENT` en total, `TRAINING_MAX_CONCURRENT_PER_USER` por
+usuario, con equidad entre usuarios). El webhook del worker es idempotente (duplicados y
+callbacks fuera de orden responden 200 con `applied: false`) y cada callback renueva el latido
+(`last_heartbeat_at`) que vigila el barrido de estancados. Los eventos hacia el buscador y hacia
+el flujo de training salen por un outbox transaccional (`outbox_events`) con reintentos.
 
 Ejemplo:
 

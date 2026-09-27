@@ -1,5 +1,7 @@
 package com.xeye.backend.training.application.port.in;
 
+import com.xeye.backend.shared.paging.Page;
+import com.xeye.backend.shared.paging.Paging;
 import com.xeye.backend.training.domain.model.Training;
 
 import java.util.List;
@@ -7,13 +9,16 @@ import java.util.List;
 /** Puerto de entrada: leer el historial de trainings de una lista o un training concreto. */
 public interface TrainingUseCases {
 
-    /** Un training del historial con su elegibilidad para pasar a {@code in_use} ya calculada. */
-    record ListedTraining(Training training, boolean usable) {
+    /**
+     * Un training con su elegibilidad para pasar a {@code in_use} ya calculada y, si está en
+     * cola, su posición (1 = el siguiente).
+     */
+    record ListedTraining(Training training, boolean usable, Integer queuePosition) {
     }
 
-    List<ListedTraining> listByList(Long userId, Long listId);
+    Page<ListedTraining> listByList(Long userId, Long listId, Paging paging);
 
-    Training get(Long userId, Long trainingId);
+    ListedTraining get(Long userId, Long trainingId);
 
     /**
      * Activa este training como el modelo en uso de la lista. Solo un training completado cuyos

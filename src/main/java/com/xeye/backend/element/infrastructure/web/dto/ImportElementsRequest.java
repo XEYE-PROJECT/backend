@@ -10,14 +10,14 @@ import java.util.List;
 /**
  * Importación masiva. {@code params} acepta cualquier valor JSON (objeto, array, cadena…);
  * los no-cadena se serializan a su texto JSON antes de guardarse, siguiendo el contrato de
- * cadena opaca de {@link CreateElementRequest}.
+ * cadena opaca de {@link CreateElementRequest} (y su mismo tope de longitud).
  */
 public record ImportElementsRequest(
         @NotEmpty @Size(max = 10000) List<@Valid Item> elements) {
 
     public record Item(
-            @NotBlank String text,
+            @NotBlank @Size(max = 1000) String text,
             Object params,
-            String description) {
+            @Size(max = 4000) String description) {
     }
 }

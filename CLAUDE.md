@@ -91,34 +91,69 @@ Scope is deliberately smaller than the Python original (university project): no 
   `SHA2()` (identical output).
 - **Errors:** throw `shared.exception.*` (`NotFoundException`→404, `ConflictException`→409,
   `BadRequestException`→400, `UnauthorizedException`→401, `ForbiddenException`→403,
-  `TooManyRequestsException`→429 + Retry-After, `ServiceUnavailableException`→503).
-  `GlobalExceptionHandler` maps them to `ApiError` JSON. Do not catch them in controllers.
+  `TooManyRequestsException`→429 + Retry-After, `ServiceUnavailableException`→503,
+  `PayloadTooLargeException`→413). `GlobalExceptionHandler` maps them **and the framework's**
+  (malformed JSON, type mismatch, unknown route → 404, wrong method → 405, bean validation,
+  optimistic lock → 409 `CONCURRENT_MODIFICATION`, `DataIntegrityViolation` → 409) to `ApiError`
+  JSON, always with a machine `code`; only truly unexpected exceptions become 500. Domain
+  `IllegalArgumentException`s (blank text, unknown status) map to 400 `INVALID_ARGUMENT`. Do not
+  catch them in controllers.
+- **Pagination:** every list endpoint takes `?offset&limit` (`shared/paging/Paging.of`, max 200)
+  and returns `PageResponse {items, total, offset, limit}`; repositories return
+  `shared/paging/Page`. The internal search API paginates by keyset (`afterId`).
+- **Body limits:** `BodySizeLimitFilter` (registered first in `WebConfig`, `xeye.http.*`) rejects
+  oversized bodies with 413 before parsing: 1 MB default, 16 MB on `/elements/import`, 8 MB on
+  `/internal/**`, 256 MB on `/webhooks/**` (base64 embeddings of a whole list). Request DTOs carry
+  `@Size` limits and the domain re-checks lengths (`Element.MAX_*`, `ItemList.MAX_*`).
+- **Optimistic locking:** `lists`, `elements` and `trainings` have a `@Version` column
+  (migration V9). Domain objects carry `version` and the mappers copy it back; bulk JPQL updates
+  bump it (`version = version + 1`). Re-read an entity after a bulk update before saving it.
+- **Batch writes:** `ElementPersistenceAdapter.saveAll` / `updateGeneratedDescriptions` go through
+  `JdbcTemplate.batchUpdate` (IDENTITY ids make Hibernate insert batching impossible;
+  `rewriteBatchedStatements=true` turns each batch into one multi-row INSERT).
+- **Outbox instead of `@Async` events:** every `shared/event/*Event` implements `DomainEvent`
+  (with a stable `TYPE`). `OutboxRecorder` (`@EventListener`, synchronous) writes it to
+  `outbox_events` **in the publisher's transaction**; `OutboxRelay` (single thread, woken after
+  each commit + `xeye.outbox.poll-ms` poll) delivers it to the module `OutboxHandler` bean that
+  declares the type (`SearchSyncOutboxHandler` in `search`, `TrainingOutboxHandler` in
+  `training`), coalescing identical rows, with exponential backoff and `failed` after
+  `max-attempts` (ERROR log → Sentry). Handlers must be idempotent. Never make an outbound HTTP
+  call inside a DB transaction: publish an event and let the relay do it.
+- **Outbound HTTP:** build clients with `shared/http/OutboundHttp.client(url, readTimeout)`
+  (connect timeout 3 s, HTTP/1.1). The three search-service clients share the
+  `searchServiceBreaker` `CircuitBreaker` bean (5 failures → open 30 s → probe); `Retry` exists for
+  idempotent calls. RunPod's `POST /run` is never retried (it would launch twice).
 - **DB-managed timestamps:** JPA entities use `@Generated` + `insertable=false, updatable=false`
   on `created_at`/`updated_at`; the DB defaults / `ON UPDATE` manage them.
 
 ## The training flow (the crux)
 
-Trigger → pending → launch (user) → callback → activate. All wiring lives in the `training` module.
+Trigger → pending → enqueue (user) → dispatch → callback → activate. All wiring lives in the
+`training` module.
 
 1. **Trigger.** `ListService.update` (when the description changes) and `ElementService`
    (element created / text|description changed / deleted) publish `TrainingRequestedEvent`.
-   `TrainingEventListener` handles it **`@Async` + `@TransactionalEventListener(AFTER_COMMIT)`**
-   and only calls `ensurePending`: a `Training` row `PENDING` per list (at most one, DB-enforced
-   by the V4 generated-column unique index). Nothing launches on its own.
-2. **Launch (user-initiated).** `POST /trainings/{id}/launch` (launch the pending one) or
+   It goes through the **outbox** (`TrainingOutboxHandler`) and only calls `ensurePending`: a
+   `Training` row `PENDING` per list (at most one, DB-enforced by the V4 generated-column unique
+   index). Nothing launches on its own.
+2. **Enqueue (user-initiated).** `POST /trainings/{id}/launch` (launch the pending one) or
    `POST /lists/{listId}/trainings` (retrain now: reuses/creates the pending row) →
-   `TrainingLaunchOrchestrator` → `TrainingService.prepareLaunch` (marks the row `QUEUED`,
-   marks **all** the list's elements `trained=false`, builds the payload and records the
-   launch-time element ids on `trainings.element_ids` — the search service aligns embedding
-   rows to elements by id), then `TrainingLauncher.launch(...)`, then `markLaunched`.
-   The webhook secret is **not** in the payload: the docker launcher passes it as
-   `-e WEBHOOK_SECRET`, the RunPod endpoint has it in its env.
-   **Launch caps** (`assertLaunchCapacity`, both → 409): a list with a launched-but-unfinished
-   run cannot launch another, and at most `xeye.training.max-concurrent` runs
-   (`TRAINING_MAX_CONCURRENT`, default 1, `<=0` = unlimited) may run backend-wide — each run is
-   a worker container eating CPU/GPU/RAM. The orchestrator serializes `prepareLaunch` behind a
-   `ReentrantLock` (single-instance monolith) so concurrent launches can't race past the caps;
-   a failed/stalled run frees its slot (`markFailed` / `TrainingStalledSweeper`).
+   `TrainingDispatcher.launch` → `TrainingService.enqueue` (PENDING → `QUEUED`, stores the run
+   options: `embedding_model`, `force_enrich`, `strategy`). 409 if the list already has a run
+   queued or launched. Then the dispatcher runs `dispatch()` right away.
+3. **Dispatch (the queue).** `TrainingDispatcher.dispatch()` (after each enqueue, after each
+   terminal webhook, after the stalled sweep, and every 5 s as a fallback; serialized by a
+   `tryLock`) asks `pickNextQueued()`: nothing if `countLaunched() >= max-concurrent`
+   (`TRAINING_MAX_CONCURRENT`, `<=0` = unlimited); otherwise, among the queued runs whose user is
+   under `max-concurrent-per-user` (`TRAINING_MAX_CONCURRENT_PER_USER`), the one whose user has
+   the **fewest launched runs**, oldest first (fairness). For it, `prepareLaunch(trainingId)`
+   marks **all** the list's elements `trained=false`, builds the payload, records the launch-time
+   element ids on `trainings.element_ids` (search aligns embedding rows by id) and fixes the
+   price; then `TrainingLauncher.launch(...)` **outside any transaction**, then `markLaunched`
+   (sets the instance id; it never regresses a status a fast worker callback already advanced).
+   A launch failure marks the run `FAILED` and re-flags the list pending. The webhook secret is
+   **not** in the payload: the docker launcher passes it as `-e WEBHOOK_SECRET`, the RunPod
+   endpoint has it in its env. Queued runs show `queuePosition` in the API.
 3. **Provider** (`xeye.training.provider`). All three send the *same* job payload
    (`TrainingLaunchCommand`, whose component names are snake_case **on purpose** — the Python
    worker reads them literally) and answer on the same webhook; they differ only in where the
@@ -134,15 +169,30 @@ Trigger → pending → launch (user) → callback → activate. All wiring live
      can actually use it; the launcher always overrides the CMD with the one-shot entrypoint.
    - `runpod`: `RunPodTrainingLauncher` POSTs `https://api.runpod.ai/v2/{endpointId}/run`.
 4. **Callback.** `POST /webhooks/training-update` (`TrainingWebhookController`; the
-   `X-Webhook-Token` header is verified by `SharedSecretAuthenticationFilter`) → `TrainingService.applyUpdate`. On `completed`: set embeddings/model/time/cost, cache the
-   worker's `generated_descriptions` on the elements (see below), set this training
-   **`in_use=true`** (clearing it on all other trainings of the list), mark the list's elements
-   `trained=true`, and push to search via `SearchIndexer`.
-5. **Search push** (`xeye.search.provider`): `log` (default, dev) just logs; `http`
-   (`HttpSearchIndexer`) POSTs `{url}/v1/lists/{listId}/index` with `X-Internal-Service: backend`
-   + `X-Internal-Token`. The payload includes the training's opaque `model` string (so search
-   embeds queries with the same model) and is **non-fatal**: failures are caught and logged,
-   because the search service lazily reloads from `/internal/search/lists/{id}` anyway.
+   `X-Webhook-Token` header is verified by `SharedSecretAuthenticationFilter`) →
+   `TrainingService.applyUpdate`, a **strict, idempotent state machine**
+   (`TrainingStatus.canTransitionTo`): callbacks only move forward, a repeated status is a
+   heartbeat, anything on a terminal run is ignored (200 with `applied: false`), `list_id` must
+   match (400 `TRAINING_LIST_MISMATCH`). Every callback sets `trainings.last_heartbeat_at`
+   (`updated_at` does not change on a same-status heartbeat — Hibernate skips the UPDATE — which
+   is why the column exists; `TrainingStalledSweeper` uses it). A run the sweeper marked stalled
+   (`Training.STALLED_ERROR`) may still complete late. Concurrent callbacks on the same run hit
+   the `@Version` and the controller retries. On `completed`: store the embeddings in
+   **`training_embeddings`** (own table, never loaded when listing; `trainings.has_embeddings`
+   is the flag), set model/time/cost, cache the worker's `generated_descriptions` on the elements
+   (batched, see below), set this training **`in_use=true`** (clearing it on all other trainings
+   of the list), mark the list's elements `trained=true`, and publish
+   `SearchIndexRequestedEvent` (outbox).
+5. **Search push** (`xeye.search.provider`): `TrainingOutboxHandler` → `pushToSearch(trainingId)`
+   → `SearchIndexer`. `log` (default, dev) just logs; `http` (`HttpSearchIndexer`) POSTs
+   `{url}/v1/lists/{listId}/index` with `X-Internal-Service: backend` + `X-Internal-Token`,
+   through the shared circuit breaker. The payload includes the training's opaque `model` string
+   (so search embeds queries with the same model). Failures make the outbox retry with backoff;
+   the search service also lazily reloads from `/internal/search/lists/{id}` anyway.
+6. **Retention.** `TrainingRetentionSweeper` (daily) deletes finished runs that are not `in_use`
+   older than `xeye.training.retention-days` (`TRAINING_RETENTION_DAYS`, 0 = keep), embeddings
+   included (FK cascade). `SearchLogRetentionSweeper` does the same for `searches`
+   (`SEARCH_LOG_RETENTION_DAYS`). Both delete in short batches.
 
 **LLM enrichment cache (`elements.generated_description`).** The worker's LLM step costs seconds
 per element, so its output is cached: it comes back in `generated_descriptions` (element id →
@@ -167,12 +217,14 @@ truth. Three pieces, all in the `search` module:
 
 - **Internal sync API** (`InternalSearchController`; `/internal/**` requires the shared
   `X-Internal-Token`, verified by `SharedSecretAuthenticationFilter`, same as the webhook; the
-  production proxy does not expose it): `GET /internal/search/bootstrap`
-  (api key **hashes** + all list metadata + the available embedding models, which search
-  pre-warms at startup, + `userLimits`: per-user search rate limits set by an admin),
-  `GET /internal/search/lists/{listId}` (elements + the
-  in_use training's `embeddingsData`/`model` — the lazy-load counterpart of the index push),
-  `POST /internal/search/logs` (batched search-log ingestion → `searches` table, migration V2).
+  production proxy does not expose it): `GET /internal/search/bootstrap?limit=` (first keyset
+  page of api key **hashes** and of list metadata, with `apiKeysNextAfterId`/`listsNextAfterId`
+  when more remain — continued via `GET /internal/search/api-keys|lists?afterId=&limit=` — plus
+  the available embedding models, which search pre-warms at startup, and `userLimits`: per-user
+  search rate limits set by an admin), `GET /internal/search/lists/{listId}` (elements + the
+  in_use training's `embeddingsData` (loaded from `training_embeddings`)/`model` — the lazy-load
+  counterpart of the index push), `POST /internal/search/logs` (batched, bean-validated
+  search-log ingestion → `searches` table, migration V2; ≤ 500 entries per batch).
 - **Console playground proxy** (`ConsoleSearchController`, `POST /lists/{listId}/search`, JWT):
   the browser never holds an API key. `ConsoleSearchService` checks ownership, then the outbound
   port `SearchQueryGateway` (`HttpSearchQueryGateway` → search's internal
@@ -185,20 +237,20 @@ truth. Three pieces, all in the `search` module:
   search's default): all of a user's API keys and their console searches share the quota. Only
   admins change it (`PUT /admin/users/{id}` with `searchRateLimitPerMinute`/`resetSearchRateLimit`),
   which publishes `UserSearchLimitChangedEvent` → `PUT /v1/users/{id}/limits` on search.
-- **Change notifications** (`SearchSyncEventListener`, `@Async("searchSyncTaskExecutor")` +
-  AFTER_COMMIT, best-effort — failures only mean brief staleness): `ListMetaChangedEvent`
+- **Change notifications** (`SearchSyncOutboxHandler`, fed by the outbox — delivered after
+  commit with retries; a failure only means brief staleness): `ListMetaChangedEvent`
   (rename/visibility), `ListDeletedEvent`, `ListElementsChangedEvent` (any element mutation,
   **including params-only edits**, → cache invalidation on the search side),
   `ApiKeyCreatedEvent`/`ApiKeyDeletedEvent`, `UserDeletedEvent`, `UserSearchLimitChangedEvent` — all in
-  `shared/event`.
-  Outbound port `SearchSyncNotifier`; impls `HttpSearchSyncNotifier` (provider `http`) /
-  `LoggingSearchSyncNotifier` (provider `log`, default).
+  `shared/event`, all `DomainEvent`s.
+  Outbound port `SearchSyncNotifier`; impls `HttpSearchSyncNotifier` (provider `http`, through the
+  shared circuit breaker) / `LoggingSearchSyncNotifier` (provider `log`, default).
 - **Search logs**: domain `SearchLog`, in-port `SearchLogUseCases`, user endpoint
-  `GET /lists/{listId}/searches` (owner-scoped, `?limit=` capped at 200).
+  `GET /lists/{listId}/searches` (owner-scoped, paginated), daily retention sweep.
 
-Cross-module reads use internal in-ports: `ApiKeyQueryPort.findAll`, `ListQueryPort.findAll`,
-`ElementQueryPort.findByListId`, `TrainingQueryPort.findInUseByListId`,
-`UserQueryPort.findSearchRateLimits`.
+Cross-module reads use internal in-ports: `ApiKeyQueryPort.findAfterId`, `ListQueryPort.findAfterId`,
+`ElementQueryPort.findByListId`/`countByListId`, `TrainingQueryPort.findInUseByListId`/
+`findEmbeddingsData`, `UserQueryPort.findSearchRateLimits`.
 
 ## Common commands
 
@@ -225,9 +277,12 @@ Hot reload: DevTools watches `target/classes`. Saving a file in an IDE that auto
 `ProductionConfigGuard` also rejects `localhost` anywhere in `CORS_ORIGINS`/`FRONTEND_URL`/`BACKEND_URL`/`SEARCH_SERVICE_URL`.
 
 `xeye.jwt.{secret,expiration-minutes,issuer}`, `xeye.cors.allowed-origins`,
-`xeye.training.{provider,webhook-secret,callback-base-url,mock-delay-ms,embedding-models,stalled-after-minutes,max-concurrent,docker.*,runpod.*}`,
-`xeye.search.{provider,url,internal-service-name,internal-token}` (`SearchProperties` lives in
-`shared/config` — the `training` and `search` modules both use it),
+`xeye.training.{provider,webhook-secret,callback-base-url,mock-delay-ms,embedding-models,stalled-after-minutes,max-concurrent,max-concurrent-per-user,retention-days,docker.*,runpod.*}`,
+`xeye.search.{provider,url,internal-service-name,internal-token,log-retention-days}` (`SearchProperties` lives in
+`shared/config` — the `training` and `search` modules both use it), `xeye.http.*` (body limits),
+`xeye.outbox.*` (relay), `spring.datasource.hikari.*` (pool; `DB_POOL_SIZE`),
+`server.shutdown=graceful` + health probes (`/actuator/health/{liveness,readiness}`, readiness
+includes the DB; the Dockerfile HEALTHCHECK uses readiness),
 `xeye.auth.*` (`AuthProperties`: `FRONTEND_URL`, verification, admin emails, rate limits, captcha,
 breach check, SSO), `xeye.email.*` (`EmailProperties` + `spring.mail.*` for `smtp`),
 `DB_URL/DB_USERNAME/DB_PASSWORD`, `SERVER_PORT`, `SENTRY_DSN` (empty = off; Sentry Boot 4 starter).
@@ -246,8 +301,8 @@ Authenticated (`Authorization: Bearer <jwt>`):
 `GET /admin/users`, `GET|PUT|DELETE /admin/users/{id}`, `POST /admin/users/{id}/logout-all` (admin) ·
 `GET|POST /api-keys`, `PUT|DELETE /api-keys/{id}` ·
 (`POST /api-keys` is the only response carrying the raw key) ·
-`GET|POST /lists`, `GET|PUT|DELETE /lists/{id}`, `POST /lists/{listId}/search` (console playground) ·
-`GET|POST /lists/{listId}/elements`, `POST /lists/{listId}/elements/import`, `PUT|DELETE /elements/{id}` ·
+`GET|POST /lists` (`?offset&limit&q&public`), `GET|PUT|DELETE /lists/{id}`, `POST /lists/{listId}/search` (console playground) ·
+`GET|POST /lists/{listId}/elements` (`?offset&limit&q`), `POST /lists/{listId}/elements/import`, `PUT|DELETE /elements/{id}` ·
 `GET /lists/{listId}/trainings`, `POST /lists/{listId}/trainings` (retrain), `GET /trainings/{id}`,
 `GET /trainings/pending`, `GET /trainings/embedding-models`, `POST /trainings/{id}/launch`,
 `POST /trainings/{id}/use` · `GET /lists/{listId}/searches`.
@@ -258,6 +313,8 @@ Authenticated (`Authorization: Bearer <jwt>`):
 |---|---|
 | New endpoint | controller in the module's `infrastructure/web` + method on its `*UseCases` in-port + service |
 | New table/column | Flyway migration `V__*.sql` + JPA entity + domain model + mapper + repo port/adapter |
+| New outbound event | record in `shared/event` implementing `DomainEvent` (+ `TYPE`) + a case in the module's `OutboxHandler` |
+| New list endpoint | take `offset`/`limit` params → `Paging.of` → repository returns `Page` → `PageResponse.from` |
 | New exception→HTTP code | `shared/web/GlobalExceptionHandler` + `shared/exception` |
 | New config knob | a `@ConfigurationProperties` record (auto-scanned) + `application.yml` + row in `CONFIG.md` (+ `.env.example`) |
 | Swap an integration | implement the outbound port (`TrainingLauncher`/`SearchIndexer`) + `@ConditionalOnProperty` |

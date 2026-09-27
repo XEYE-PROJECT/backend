@@ -14,6 +14,7 @@ final class ListMapper {
                 entity.getDescription(),
                 entity.isPublic(),
                 entity.getUserId(),
+                entity.getVersion(),
                 entity.getCreatedAt(),
                 entity.getUpdatedAt());
     }
@@ -25,6 +26,9 @@ final class ListMapper {
         entity.setDescription(list.description());
         entity.setPublic(list.isPublic());
         entity.setUserId(list.userId());
+        // Una fila existente siempre viaja con su versión; sin ella el merge fallaría como
+        // inserción duplicada, así que se asume 0 y el bloqueo optimista decide (409 si es vieja).
+        entity.setVersion(list.id() == null ? null : list.version() == null ? 0L : list.version());
         return entity;
     }
 }

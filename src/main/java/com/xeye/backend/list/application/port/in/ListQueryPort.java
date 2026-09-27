@@ -13,6 +13,9 @@ public interface ListQueryPort {
 
     Optional<ItemList> findById(Long listId);
 
-    /** Todas las listas de todos los usuarios — para el snapshot de bootstrap del módulo search. */
-    List<ItemList> findAll();
+    /**
+     * Listas de todos los usuarios por páginas de clave (id > afterId, id ascendente) — para el
+     * snapshot de bootstrap del módulo search, que las recorre hasta recibir menos de {@code limit}.
+     */
+    List<ItemList> findAfterId(long afterId, int limit);
 }

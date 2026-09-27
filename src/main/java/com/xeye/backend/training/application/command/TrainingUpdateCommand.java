@@ -8,13 +8,16 @@ import java.util.Map;
 /**
  * Callback de progreso/finalización de un training, del webhook real o del provider mock.
  * {@code status} es un string crudo ("optimizing"/"training"/"completed"/"failed").
- * {@code generatedDescriptions} (id de elemento -> enriquecimiento LLM del worker) solo llega
- * al completar y se cachea en los elementos para que el siguiente training no repita ese trabajo.
- * {@code describedCount} = elementos con descripción LLM (caché + generadas) al calcular los
- * embeddings; puede ser menor que los elementos del run si el LLM falló en algunos.
+ * {@code listId} (opcional) se contrasta con la lista del training: un cuerpo que no cuadra se
+ * rechaza. {@code generatedDescriptions} (id de elemento -> enriquecimiento LLM del worker)
+ * solo llega al completar y se cachea en los elementos para que el siguiente training no
+ * repita ese trabajo. {@code describedCount} = elementos con descripción LLM (caché +
+ * generadas) al calcular los embeddings; puede ser menor que los elementos del run si el LLM
+ * falló en algunos.
  */
 public record TrainingUpdateCommand(
         Long trainingId,
+        Long listId,
         String status,
         String embeddingsData,
         String model,

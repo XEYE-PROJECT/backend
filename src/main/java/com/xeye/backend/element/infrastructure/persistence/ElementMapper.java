@@ -16,6 +16,7 @@ final class ElementMapper {
                 entity.getDescription(),
                 entity.getGeneratedDescription(),
                 entity.isTrained(),
+                entity.getVersion(),
                 entity.getCreatedAt(),
                 entity.getUpdatedAt());
     }
@@ -29,6 +30,8 @@ final class ElementMapper {
         entity.setDescription(element.description());
         entity.setGeneratedDescription(element.generatedDescription());
         entity.setTrained(element.trained());
+        // Ver ListMapper: una fila existente sin versión conocida se asume 0 (409 si es vieja).
+        entity.setVersion(element.id() == null ? null : element.version() == null ? 0L : element.version());
         return entity;
     }
 }

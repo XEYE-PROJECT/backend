@@ -10,11 +10,14 @@ import com.xeye.backend.shared.event.ListDeletedEvent;
 import com.xeye.backend.shared.event.ListMetaChangedEvent;
 import com.xeye.backend.shared.event.TrainingRequestedEvent;
 import com.xeye.backend.shared.exception.NotFoundException;
+import com.xeye.backend.shared.paging.Page;
+import com.xeye.backend.shared.paging.Paging;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.util.List;
+import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
 
@@ -31,14 +34,17 @@ public class ListService implements ListUseCases, ListQueryPort {
 
     @Override
     @Transactional(readOnly = true)
-    public List<ItemList> listForUser(Long userId) {
-        return lists.findByUserId(userId);
+    public Page<ListedList> listForUser(Long userId, String query, Boolean isPublic, Paging paging) {
+        Page<ItemList> page = lists.findByUserId(userId, normalizeQuery(query), isPublic, paging);
+        Map<Long, Long> counts = lists.countElements(page.items().stream().map(ItemList::id).toList());
+        return page.map(list -> new ListedList(list, counts.getOrDefault(list.id(), 0L)));
     }
 
     @Override
     @Transactional(readOnly = true)
-    public ItemList get(Long userId, Long listId) {
-        return require(userId, listId);
+    public ListedList get(Long userId, Long listId) {
+        ItemList list = require(userId, listId);
+        return new ListedList(list, lists.countElements(List.of(list.id())).getOrDefault(list.id(), 0L));
     }
 
     @Override
@@ -102,12 +108,20 @@ public class ListService implements ListUseCases, ListQueryPort {
 
     @Override
     @Transactional(readOnly = true)
-    public List<ItemList> findAll() {
-        return lists.findAll();
+    public List<ItemList> findAfterId(long afterId, int limit) {
+        return lists.findAfterId(afterId, limit);
     }
 
     private ItemList require(Long userId, Long listId) {
         return lists.findByIdAndUserId(listId, userId)
                 .orElseThrow(() -> new NotFoundException("List not found"));
+    }
+
+    private static String normalizeQuery(String query) {
+        if (query == null) {
+            return null;
+        }
+        String trimmed = query.trim();
+        return trimmed.isEmpty() ? null : trimmed;
     }
 }

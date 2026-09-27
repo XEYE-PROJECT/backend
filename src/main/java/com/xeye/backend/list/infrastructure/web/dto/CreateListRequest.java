@@ -6,7 +6,7 @@ import jakarta.validation.constraints.Size;
 
 public record CreateListRequest(
         @NotBlank @Size(max = 100) String name,
-        String description,
+        @Size(max = 2000) String description,
         @JsonProperty("public") Boolean isPublic) {
 
     public boolean publicOrDefault() {

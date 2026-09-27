@@ -6,6 +6,7 @@ import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
 import jakarta.persistence.Table;
+import jakarta.persistence.Version;
 import org.hibernate.annotations.Generated;
 import org.hibernate.generator.EventType;
 
@@ -36,6 +37,11 @@ public class ElementJpaEntity {
 
     @Column(nullable = false)
     private boolean trained;
+
+    /** Bloqueo optimista: dos ediciones concurrentes del mismo elemento → la segunda recibe 409. */
+    @Version
+    @Column(nullable = false)
+    private Long version;
 
     @Generated(event = EventType.INSERT)
     @Column(name = "created_at", insertable = false, updatable = false)
@@ -102,6 +108,14 @@ public class ElementJpaEntity {
 
     public void setTrained(boolean trained) {
         this.trained = trained;
+    }
+
+    public Long getVersion() {
+        return version;
+    }
+
+    public void setVersion(Long version) {
+        this.version = version;
     }
 
     public Instant getCreatedAt() {

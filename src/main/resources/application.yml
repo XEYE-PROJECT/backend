@@ -9,16 +9,42 @@
 spring:
   application:
     name: xeye-backend
+  lifecycle:
+    timeout-per-shutdown-phase: 30s
   datasource:
     url: ${DB_URL}
     username: ${DB_USERNAME}
     password: ${DB_PASSWORD}
     driver-class-name: com.mysql.cj.jdbc.Driver
+    hikari:
+      pool-name: xeye
+      # Pocas conexiones y bien vigiladas: el VPS comparte MariaDB con otro servicio.
+      maximum-pool-size: ${DB_POOL_SIZE:10}
+      minimum-idle: ${DB_POOL_MIN_IDLE:2}
+      connection-timeout: 5000
+      validation-timeout: 3000
+      idle-timeout: 600000
+      keepalive-time: 300000
+      # < wait_timeout de MariaDB (28800 s por defecto): la BD nunca cierra una conexión viva del pool.
+      max-lifetime: 1500000
+      data-source-properties:
+        # Un solo INSERT multi-fila por lote (importaciones) y statements preparados cacheados.
+        rewriteBatchedStatements: true
+        cachePrepStmts: true
+        prepStmtCacheSize: 250
+        prepStmtCacheSqlLimit: 2048
   jpa:
     hibernate:
       # El esquema es de Flyway. Hibernate nunca toca el DDL.
       ddl-auto: none
     open-in-view: false
+    properties:
+      hibernate:
+        # Agrupa INSERT/UPDATE en lotes JDBC (las inserciones masivas van además por JdbcTemplate:
+        # con ids IDENTITY Hibernate no puede agrupar los INSERT).
+        jdbc.batch_size: 50
+        order_inserts: true
+        order_updates: true
   flyway:
     enabled: true
   # SMTP (solo con EMAIL_PROVIDER=smtp). IONOS: smtp.ionos.es, 587 STARTTLS, usuario = buzón completo.
@@ -37,8 +63,20 @@ spring:
 
 server:
   port: ${SERVER_PORT:8000}
+  # Apagado ordenado: deja de aceptar conexiones y espera a que terminen las peticiones en curso
+  # (hasta spring.lifecycle.timeout-per-shutdown-phase) antes de cerrar el pool y salir.
+  shutdown: graceful
+  tomcat:
+    threads:
+      max: ${SERVER_THREADS_MAX:50}
+    connection-timeout: 10s
+    # Un body rechazado por tamaño (413) no se "traga" entero: Tomcat cierra la conexión.
+    max-swallow-size: 2MB
 
-# Actuator: solo /actuator/health y sin detalles (el proxy bloquea el resto de /actuator/*).
+
+# Actuator: solo /actuator/health (+ /liveness y /readiness) y sin detalles (el proxy bloquea el
+# resto de /actuator/*). Readiness incluye la BD: sin ella el servicio no puede atender nada;
+# liveness solo el estado del proceso (una BD caída no debe hacer que docker reinicie el backend).
 management:
   endpoints:
     web:
@@ -47,6 +85,13 @@ management:
   endpoint:
     health:
       show-details: never
+      probes:
+        enabled: true
+      group:
+        readiness:
+          include: readinessState,db
+        liveness:
+          include: livenessState
   health:
     # El starter de mail añadiría un indicador que abre una conexión SMTP en cada health check
     # (y pondría el servicio DOWN si IONOS no responde): el email no es crítico para servir tráfico.
@@ -67,6 +112,19 @@ sentry:
 
 # ---- Configuración propia de la aplicación (ver com.xeye.backend.shared.config) ----
 xeye:
+  http:
+    # Tope del cuerpo de las peticiones (bytes): general, importación masiva, webhook del worker
+    # (embeddings en base64 de toda la lista) y API interna (lotes de logs del buscador).
+    max-body-bytes: ${HTTP_MAX_BODY_BYTES:1048576}
+    import-max-body-bytes: ${HTTP_IMPORT_MAX_BODY_BYTES:16777216}
+    webhook-max-body-bytes: ${HTTP_WEBHOOK_MAX_BODY_BYTES:268435456}
+    internal-max-body-bytes: ${HTTP_INTERNAL_MAX_BODY_BYTES:8388608}
+  outbox:
+    # Relé del outbox (eventos hacia el buscador y el flujo de training): sondeo, tamaño de
+    # lote e intentos antes de dar un evento por perdido (queda como failed + log ERROR).
+    poll-ms: ${OUTBOX_POLL_MS:5000}
+    batch-size: ${OUTBOX_BATCH_SIZE:100}
+    max-attempts: ${OUTBOX_MAX_ATTEMPTS:20}
   jwt:
     # >= 32 bytes (HS256). Generar con: openssl rand -base64 48
     secret: ${JWT_SECRET}
@@ -140,8 +198,14 @@ xeye:
     # Un training lanzado sin actualización del webhook en este tiempo se marca fallido y su
     # lista vuelve a pending (worker muerto / callback perdido). 0 desactiva el barrido.
     stalled-after-minutes: ${TRAINING_STALLED_AFTER_MINUTES:30}
-    # Máximo de trainings corriendo a la vez en todo el backend
+    # Cola de entrenamientos: un lanzamiento entra en cola (queued) y el despachador lo arranca
+    # cuando hay hueco. Tope de runs a la vez en todo el backend (<= 0 = sin límite) y por
+    # usuario (equidad: nadie ocupa todos los huecos mientras otros esperan; <= 0 = sin límite).
     max-concurrent: ${TRAINING_MAX_CONCURRENT:1}
+    max-concurrent-per-user: ${TRAINING_MAX_CONCURRENT_PER_USER:1}
+    # Retención: los runs terminados (completed/failed) que no son el modelo en uso se borran
+    # pasados estos días, con sus embeddings. 0 = conservar siempre.
+    retention-days: ${TRAINING_RETENTION_DAYS:90}
     # Precio preestablecido de un entrenamiento, en EUR: fijo + por descripción LLM a generar.
     # El por-descripción por defecto sale de facturación real de Gemini (tarifa Lote,
     # pensamiento incluido): 995 descripciones ~ 5,24 EUR -> ~0,0053 EUR/descripción.
@@ -166,6 +230,7 @@ xeye:
     runpod:
       api-key: ${RUNPOD_API_KEY:}
       endpoint-id: ${RUNPOD_ENDPOINT_ID:}
+      # Timeout de lectura del POST /run (el job en sí corre asíncrono y responde por webhook).
       timeout-seconds: ${RUNPOD_TIMEOUT_SECONDS:30}
   search:
     # log -> solo loguea el payload (dev). http -> POST al microservicio de búsqueda.
@@ -175,3 +240,5 @@ xeye:
     # Secreto compartido de las llamadas servidor-a-servidor backend<->search (ambas direcciones):
     # se envía en pushes/notificaciones y lo exige el filtro de /internal/** (SecurityConfig).
     internal-token: ${SEARCH_INTERNAL_TOKEN}
+    # Retención del historial de búsquedas (tabla searches), en días. 0 = conservar siempre.
+    log-retention-days: ${SEARCH_LOG_RETENTION_DAYS:180}

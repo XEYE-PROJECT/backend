@@ -15,8 +15,14 @@ Guard = lo comprueba `ProductionConfigGuard` al arrancar con el perfil `prod`.
 |---|---|---|---|---|
 | `SPRING_PROFILES_ACTIVE` | `dev` o `prod`. Sin perfil la app no arranca; la imagen fija `prod` | `dev` (pom/compose) | **prod** | — |
 | `SERVER_PORT` | Puerto HTTP | `8000` | opcional | — |
-| `JAVA_TOOL_OPTIONS` | Heap etc. (`-Xmx320m` en el VPS de 4 GB) | — | recomendado | — |
-| `SPRING_DATASOURCE_HIKARI_MAXIMUM_POOL_SIZE` | Pool JDBC | 10 | recomendado (`5`) | — |
+| `JAVA_TOOL_OPTIONS` | Heap etc. (`-Xmx320m` en el VPS de 4 GB; la imagen ya arranca con `-XX:MaxRAMPercentage=65`, `-XX:+ExitOnOutOfMemoryError`, GC serie) | — | recomendado | — |
+| `DB_POOL_SIZE` / `DB_POOL_MIN_IDLE` | Pool JDBC Hikari (timeouts y keepalive fijos en `application.yml`) | `10` / `2` | recomendado (`5`) | — |
+| `SERVER_THREADS_MAX` | Hilos de Tomcat | `50` | opcional | — |
+| `HTTP_MAX_BODY_BYTES` | Tope del body de cualquier petición (413 por encima) | 1 MB | opcional | — |
+| `HTTP_IMPORT_MAX_BODY_BYTES` | Idem `POST /lists/{id}/elements/import` | 16 MB | opcional | — |
+| `HTTP_WEBHOOK_MAX_BODY_BYTES` | Idem `POST /webhooks/**` (embeddings en base64 de la lista entera) | 256 MB | opcional | — |
+| `HTTP_INTERNAL_MAX_BODY_BYTES` | Idem `/internal/**` (lotes de logs del buscador) | 8 MB | opcional | — |
+| `OUTBOX_POLL_MS` / `OUTBOX_BATCH_SIZE` / `OUTBOX_MAX_ATTEMPTS` | Relé del outbox (eventos hacia el buscador/training): sondeo, lote e intentos antes de `failed` | `5000` / `100` / `20` | opcional | — |
 
 ## Base de datos
 
@@ -73,8 +79,11 @@ Guard = lo comprueba `ProductionConfigGuard` al arrancar con el perfil `prod`.
 | `TRAINING_WEBHOOK_SECRET` 🔑 | `X-Webhook-Token` del callback; el worker lo recibe por su entorno (`WEBHOOK_SECRET`) | `dev-webhook-secret` | **sí** | ≥ 32 chars, no dev |
 | `BACKEND_URL` | URL pública de este backend a la que el worker llama de vuelta | `http://localhost:8000` | **sí** | `https://`, sin localhost |
 | `TRAINING_EMBEDDING_MODELS` | Modelos ofrecidos (el primero = por defecto); worker y search deben poder cargarlos | MiniLM,mpnet | recomendado | — |
-| `TRAINING_MAX_CONCURRENT` | Trainings a la vez en todo el backend (≤ 0 = sin límite) | `1` | opcional | — |
-| `TRAINING_STALLED_AFTER_MINUTES` | Minutos sin webhook antes de marcar fallido (0 desactiva) | `30` | opcional | — |
+| `TRAINING_MAX_CONCURRENT` | Trainings lanzados a la vez en todo el backend; el resto espera en cola (≤ 0 = sin límite) | `1` | opcional | — |
+| `TRAINING_MAX_CONCURRENT_PER_USER` | Trainings lanzados a la vez por usuario (equidad de la cola; ≤ 0 = sin límite) | `1` | opcional | — |
+| `TRAINING_STALLED_AFTER_MINUTES` | Minutos sin latido del worker antes de marcar fallido (0 desactiva) | `30` | opcional | — |
+| `TRAINING_RETENTION_DAYS` | Días que se conservan los runs terminados que no son el modelo en uso (0 = siempre) | `90` | opcional | — |
+| `RUNPOD_TIMEOUT_SECONDS` | Timeout de lectura del `POST /run` a RunPod (la llamada nunca se reintenta) | `30` | opcional | — |
 | `TRAINING_FIXED_PRICE` / `TRAINING_PRICE_PER_DESCRIPTION` | Precio mostrado (EUR) | `0.3` / `0.0053` | opcional | — |
 | `TRAINING_MOCK_DELAY_MS` | Solo provider mock | `500` | — | — |
 | `RUNPOD_API_KEY` 🔑 / `RUNPOD_ENDPOINT_ID` / `RUNPOD_TIMEOUT_SECONDS` | Provider runpod | vacío | si runpod | — |
@@ -89,6 +98,7 @@ Guard = lo comprueba `ProductionConfigGuard` al arrancar con el perfil `prod`.
 | `SEARCH_PROVIDER` | `log` (solo dev) o `http` | `log` | **http** | ≠ `http` prohibido |
 | `SEARCH_SERVICE_URL` | URL del search-service por la red docker (`http://search-service:8002`) | `http://localhost:8002` | **sí** | sin localhost |
 | `SEARCH_INTERNAL_TOKEN` 🔑 | Secreto compartido `X-Internal-Token` (= `INTERNAL_TOKEN` en search) | `dev-internal-token` | **sí** | ≥ 32 chars, no dev |
+| `SEARCH_LOG_RETENTION_DAYS` | Días que se conserva el historial de búsquedas (`searches`; 0 = siempre) | `180` | opcional | — |
 
 El mismo `SEARCH_SERVICE_URL`/`SEARCH_INTERNAL_TOKEN` sirve para el push del índice, las
 notificaciones de cambio y el **playground de la consola** (`POST /lists/{id}/search`, que el

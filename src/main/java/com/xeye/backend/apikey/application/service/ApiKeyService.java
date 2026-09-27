@@ -13,6 +13,9 @@ import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import com.xeye.backend.shared.paging.Page;
+import com.xeye.backend.shared.paging.Paging;
+
 import java.util.List;
 
 @Service
@@ -33,14 +36,14 @@ public class ApiKeyService implements ApiKeyUseCases, ApiKeyQueryPort {
 
     @Override
     @Transactional(readOnly = true)
-    public List<ApiKey> listForUser(Long userId) {
-        return apiKeys.findByUserId(userId);
+    public Page<ApiKey> listForUser(Long userId, Paging paging) {
+        return apiKeys.findByUserId(userId, paging);
     }
 
     @Override
     @Transactional(readOnly = true)
-    public List<ApiKey> findAll() {
-        return apiKeys.findAll();
+    public List<ApiKey> findAfterId(long afterId, int limit) {
+        return apiKeys.findAfterId(afterId, limit);
     }
 
     @Override

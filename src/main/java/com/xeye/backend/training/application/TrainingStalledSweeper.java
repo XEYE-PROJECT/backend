@@ -15,9 +15,10 @@ import java.util.List;
 /**
  * Red de seguridad para workers muertos: un training lanzado solo avanza vía webhooks, así que
  * si el contenedor muere (o el callback nunca llega) la fila quedaría corriendo para siempre.
- * Este barrido falla los runs sin actualizar en {@code xeye.training.stalled-after-minutes}
- * (0 lo desactiva) y re-marca la lista como PENDING para que el usuario simplemente reentrene;
- * si el worker resucita y llama después, las transiciones laxas aún aplican su estado final.
+ * Este barrido falla los runs cuyo último latido ({@code last_heartbeat_at}, que actualiza cada
+ * callback aunque repita el estado) supera {@code xeye.training.stalled-after-minutes} (0 lo
+ * desactiva), re-marca la lista como PENDING y libera hueco en la cola. Si el worker resucita y
+ * completa después, ese {@code completed} tardío aún se aplica.
  */
 @Component
 public class TrainingStalledSweeper {
@@ -25,10 +26,13 @@ public class TrainingStalledSweeper {
     private static final Logger log = LoggerFactory.getLogger(TrainingStalledSweeper.class);
 
     private final TrainingLaunchService launchService;
+    private final TrainingDispatcher dispatcher;
     private final TrainingProperties properties;
 
-    public TrainingStalledSweeper(TrainingLaunchService launchService, TrainingProperties properties) {
+    public TrainingStalledSweeper(TrainingLaunchService launchService, TrainingDispatcher dispatcher,
+                                  TrainingProperties properties) {
         this.launchService = launchService;
+        this.dispatcher = dispatcher;
         this.properties = properties;
     }
 
@@ -46,6 +50,7 @@ public class TrainingStalledSweeper {
         }
         if (!stalled.isEmpty()) {
             log.info("Marked {} stalled training(s) as failed", stalled.size());
+            dispatcher.dispatch();
         }
     }
 }

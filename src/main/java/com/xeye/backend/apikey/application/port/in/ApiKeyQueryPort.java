@@ -6,9 +6,9 @@ import java.util.List;
 
 /**
  * Puerto interno para el módulo search: todas las claves (solo su hash) para la caché de
- * autenticación del search-service. No se expone a usuarios finales.
+ * autenticación del search-service, por páginas de clave (id > afterId). No se expone a usuarios.
  */
 public interface ApiKeyQueryPort {
 
-    List<ApiKey> findAll();
+    List<ApiKey> findAfterId(long afterId, int limit);
 }

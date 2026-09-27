@@ -5,6 +5,8 @@ import com.xeye.backend.apikey.infrastructure.web.dto.ApiKeyCreatedResponse;
 import com.xeye.backend.apikey.infrastructure.web.dto.ApiKeyResponse;
 import com.xeye.backend.apikey.infrastructure.web.dto.CreateApiKeyRequest;
 import com.xeye.backend.apikey.infrastructure.web.dto.UpdateApiKeyRequest;
+import com.xeye.backend.shared.paging.PageResponse;
+import com.xeye.backend.shared.paging.Paging;
 import com.xeye.backend.shared.security.AuthenticatedUser;
 import jakarta.validation.Valid;
 import org.springframework.http.HttpStatus;
@@ -16,10 +18,10 @@ import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestController;
 
-import java.util.List;
 
 @RestController
 @RequestMapping("/api-keys")
@@ -31,9 +33,12 @@ public class ApiKeyController {
         this.apiKeys = apiKeys;
     }
 
+    /** Claves del usuario paginadas ({@code ?offset&limit}, máx. 200), solo con su prefijo. */
     @GetMapping
-    public List<ApiKeyResponse> list(@AuthenticationPrincipal AuthenticatedUser current) {
-        return apiKeys.listForUser(current.id()).stream().map(ApiKeyResponse::from).toList();
+    public PageResponse<ApiKeyResponse> list(@AuthenticationPrincipal AuthenticatedUser current,
+                                             @RequestParam(required = false) Integer offset,
+                                             @RequestParam(required = false) Integer limit) {
+        return PageResponse.from(apiKeys.listForUser(current.id(), Paging.of(offset, limit)), ApiKeyResponse::from);
     }
 
     /** Única respuesta que incluye la clave en claro: el listado y el renombrado solo devuelven el prefijo. */

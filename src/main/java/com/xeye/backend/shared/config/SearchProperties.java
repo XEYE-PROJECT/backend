@@ -9,11 +9,13 @@ import org.springframework.validation.annotation.Validated;
  * servicio de búsqueda: {@code training} (push del índice al completar) y {@code search}
  * (notificaciones + API interna). {@code internalToken} es el secreto compartido en ambas
  * direcciones del tráfico backend↔search; se valida al arrancar (nunca en blanco).
+ * {@code logRetentionDays}: días que se conserva el historial de búsquedas (0 = siempre).
  */
 @Validated
 @ConfigurationProperties(prefix = "xeye.search")
 public record SearchProperties(@NotBlank String provider,
                                @NotBlank String url,
                                @NotBlank String internalServiceName,
-                               @NotBlank String internalToken) {
+                               @NotBlank String internalToken,
+                               int logRetentionDays) {
 }

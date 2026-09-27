@@ -5,12 +5,16 @@ import com.xeye.backend.search.application.command.RecordSearchCommand;
 import com.xeye.backend.search.application.port.in.SearchLogUseCases;
 import com.xeye.backend.search.application.port.out.SearchLogRepository;
 import com.xeye.backend.search.domain.model.SearchLog;
+import com.xeye.backend.shared.config.SearchProperties;
 import com.xeye.backend.shared.exception.NotFoundException;
+import com.xeye.backend.shared.paging.Page;
+import com.xeye.backend.shared.paging.Paging;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.time.Duration;
 import java.time.Instant;
 import java.util.List;
 
@@ -18,14 +22,17 @@ import java.util.List;
 public class SearchLogService implements SearchLogUseCases {
 
     private static final Logger log = LoggerFactory.getLogger(SearchLogService.class);
-    private static final int MAX_PAGE = 200;
+    static final int PURGE_BATCH = 1000;
+    private static final int MAX_PURGE_BATCHES_PER_RUN = 200;
 
     private final SearchLogRepository searchLogs;
     private final ListQueryPort lists;
+    private final SearchProperties properties;
 
-    public SearchLogService(SearchLogRepository searchLogs, ListQueryPort lists) {
+    public SearchLogService(SearchLogRepository searchLogs, ListQueryPort lists, SearchProperties properties) {
         this.searchLogs = searchLogs;
         this.lists = lists;
+        this.properties = properties;
     }
 
     /**
@@ -55,11 +62,33 @@ public class SearchLogService implements SearchLogUseCases {
 
     @Override
     @Transactional(readOnly = true)
-    public List<SearchLog> listByList(Long userId, Long listId, int limit) {
+    public Page<SearchLog> listByList(Long userId, Long listId, Paging paging) {
         lists.findById(listId)
                 .filter(list -> list.userId().equals(userId))
                 .orElseThrow(() -> new NotFoundException("List not found"));
-        return searchLogs.findByListId(listId, Math.max(1, Math.min(limit, MAX_PAGE)));
+        return searchLogs.findByListId(listId, paging);
+    }
+
+    /** Por lotes cortos, cada uno en su transacción: nunca un DELETE gigante que bloquee la tabla. */
+    @Override
+    public int purgeExpired() {
+        int days = properties.logRetentionDays();
+        if (days <= 0) {
+            return 0;
+        }
+        Instant cutoff = Instant.now().minus(Duration.ofDays(days));
+        int total = 0;
+        for (int i = 0; i < MAX_PURGE_BATCHES_PER_RUN; i++) {
+            int deleted = searchLogs.deleteSearchedBefore(cutoff, PURGE_BATCH);
+            total += deleted;
+            if (deleted < PURGE_BATCH) {
+                break;
+            }
+        }
+        if (total > 0) {
+            log.info("Purged {} search-log entries older than {} days", total, days);
+        }
+        return total;
     }
 
     private boolean isValid(RecordSearchCommand command) {

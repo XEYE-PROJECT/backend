@@ -4,9 +4,12 @@ import com.xeye.backend.element.application.port.in.ElementQueryPort;
 import com.xeye.backend.element.domain.model.Element;
 import com.xeye.backend.list.application.port.in.ListQueryPort;
 import com.xeye.backend.list.domain.model.ItemList;
+import com.xeye.backend.shared.event.SearchIndexRequestedEvent;
 import com.xeye.backend.shared.exception.BadRequestException;
 import com.xeye.backend.shared.exception.ConflictException;
 import com.xeye.backend.shared.exception.NotFoundException;
+import com.xeye.backend.shared.paging.Page;
+import com.xeye.backend.shared.paging.Paging;
 import com.xeye.backend.training.application.command.SearchIndexCommand;
 import com.xeye.backend.training.application.command.TrainingLaunchCommand;
 import com.xeye.backend.training.application.command.TrainingUpdateCommand;
@@ -23,12 +26,16 @@ import com.xeye.backend.training.domain.model.TrainingOption;
 import com.xeye.backend.training.domain.model.TrainingStatus;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.time.Duration;
 import java.time.Instant;
+import java.util.Comparator;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 import java.util.stream.Collectors;
@@ -38,44 +45,68 @@ import java.util.stream.Collectors;
  * <ol>
  *   <li>{@link #ensurePending} — una edición marca la lista como pendiente de reentrenar
  *       (un training PENDING por lista; nada se lanza solo).</li>
- *   <li>{@link #prepareLaunch} — el usuario lanza el pendiente: fija sus opciones (modelo de
- *       embedding), marca los elementos como no entrenados y monta el payload del worker.</li>
- *   <li>{@link #applyUpdate} — aplica los callbacks; al completar marca los elementos
- *       entrenados, activa este training ({@code in_use}) y empuja a búsqueda.</li>
+ *   <li>{@link #enqueue} — el usuario lanza el pendiente: fija sus opciones (modelo de
+ *       embedding…) y lo pone en cola.</li>
+ *   <li>{@link #pickNextQueued} + {@link #prepareLaunch} — el despachador elige el siguiente que
+ *       cabe en el cupo (con equidad por usuario), marca los elementos como no entrenados y
+ *       monta el payload del worker.</li>
+ *   <li>{@link #applyUpdate} — aplica los callbacks (idempotentes, solo hacia delante); al
+ *       completar guarda los embeddings aparte, marca los elementos entrenados, activa este
+ *       training ({@code in_use}) y encola el push a búsqueda por el outbox.</li>
  * </ol>
+ * Ninguna llamada HTTP saliente corre dentro de una transacción: el push al buscador lo hace el
+ * outbox ({@link #pushToSearch}) y el lanzamiento el despachador, entre transacciones.
  */
 @Service
 public class TrainingService implements TrainingUseCases, TrainingLaunchService, TrainingCompletionHandler,
         TrainingQueryPort {
 
     private static final Logger log = LoggerFactory.getLogger(TrainingService.class);
+    static final int PURGE_BATCH = 200;
+    private static final int MAX_PURGE_BATCHES_PER_RUN = 50;
 
     private final TrainingRepository trainings;
     private final ListQueryPort lists;
     private final ElementQueryPort elements;
     private final SearchIndexer searchIndexer;
     private final TrainingProperties properties;
+    private final ApplicationEventPublisher events;
 
     public TrainingService(TrainingRepository trainings, ListQueryPort lists, ElementQueryPort elements,
-                           SearchIndexer searchIndexer, TrainingProperties properties) {
+                           SearchIndexer searchIndexer, TrainingProperties properties,
+                           ApplicationEventPublisher events) {
         this.trainings = trainings;
         this.lists = lists;
         this.elements = elements;
         this.searchIndexer = searchIndexer;
         this.properties = properties;
+        this.events = events;
+    }
+
+    // ---- Lecturas ----
+
+    @Override
+    @Transactional(readOnly = true)
+    public Page<ListedTraining> listByList(Long userId, Long listId, Paging paging) {
+        Page<Training> history = trainings.findByListIdAndUserId(listId, userId, paging);
+        if (history.items().isEmpty()) {
+            return history.map(t -> new ListedTraining(t, false, null));
+        }
+        Set<Long> currentElementIds = currentElementIds(listId);
+        return history.map(training -> listed(training, currentElementIds));
     }
 
     @Override
     @Transactional(readOnly = true)
-    public List<ListedTraining> listByList(Long userId, Long listId) {
-        List<Training> history = trainings.findByListIdAndUserId(listId, userId);
-        if (history.isEmpty()) {
-            return List.of();
-        }
-        Set<Long> currentElementIds = currentElementIds(listId);
-        return history.stream()
-                .map(training -> new ListedTraining(training, coversCurrentElements(training, currentElementIds)))
-                .toList();
+    public ListedTraining get(Long userId, Long trainingId) {
+        Training training = trainings.findByIdAndUserId(trainingId, userId)
+                .orElseThrow(() -> new NotFoundException("Training not found"));
+        return listed(training, currentElementIds(training.listId()));
+    }
+
+    private ListedTraining listed(Training training, Set<Long> currentElementIds) {
+        Integer position = training.status() == TrainingStatus.QUEUED ? trainings.queuePosition(training.id()) : null;
+        return new ListedTraining(training, coversCurrentElements(training, currentElementIds), position);
     }
 
     @Override
@@ -91,11 +122,12 @@ public class TrainingService implements TrainingUseCases, TrainingLaunchService,
                     "Only a completed training with the same trained elements as the list can be put in use");
         }
         trainings.clearInUseForList(training.listId());
-        training.activate();
-        Training activated = trainings.save(training);
+        Training fresh = trainings.findById(trainingId).orElseThrow(() -> new NotFoundException("Training not found"));
+        fresh.activate();
+        Training activated = trainings.save(fresh);
         // Los flags trained de los elementos no se tocan: siguen marcando qué elementos se
         // editaron desde su último embedding, sea cual sea el training activo.
-        pushToSearch(activated);
+        events.publishEvent(new SearchIndexRequestedEvent(activated.listId(), activated.id()));
         log.info("Training {} put in use for list {}", activated.id(), activated.listId());
         return activated;
     }
@@ -137,25 +169,24 @@ public class TrainingService implements TrainingUseCases, TrainingLaunchService,
         return elements.findByListId(listId).stream().map(Element::id).collect(Collectors.toSet());
     }
 
-    /** Elegible para {@code in_use}: completado y con exactamente los elementos actuales de la lista. */
+    /** Elegible para {@code in_use}: completado, con embeddings y con exactamente los elementos actuales de la lista. */
     private boolean coversCurrentElements(Training training, Set<Long> currentElementIds) {
         return training.status() == TrainingStatus.COMPLETED
-                && training.embeddingsData() != null
+                && training.hasEmbeddings()
                 && training.elementIds() != null
                 && Set.copyOf(training.elementIds()).equals(currentElementIds);
     }
 
     @Override
     @Transactional(readOnly = true)
-    public Training get(Long userId, Long trainingId) {
-        return trainings.findByIdAndUserId(trainingId, userId)
-                .orElseThrow(() -> new NotFoundException("Training not found"));
+    public Optional<Training> findInUseByListId(Long listId) {
+        return trainings.findInUseByListId(listId);
     }
 
     @Override
     @Transactional(readOnly = true)
-    public Optional<Training> findInUseByListId(Long listId) {
-        return trainings.findInUseByListId(listId);
+    public Optional<String> findEmbeddingsData(Long trainingId) {
+        return trainings.findEmbeddings(trainingId);
     }
 
     @Override
@@ -169,6 +200,8 @@ public class TrainingService implements TrainingUseCases, TrainingLaunchService,
     public List<Training> pendingForUser(Long userId) {
         return trainings.findPendingByUserId(userId);
     }
+
+    // ---- Pendiente y cola ----
 
     @Override
     @Transactional
@@ -201,8 +234,8 @@ public class TrainingService implements TrainingUseCases, TrainingLaunchService,
         }
         // Fallar antes de tocar la BD: un lanzamiento rechazado no debe dejar una fila pendiente huérfana.
         resolveEmbeddingModel(embeddingModel);
-        assertLaunchCapacity(listId);
-        if (elements.findByListId(listId).isEmpty()) {
+        assertNoRunInProgress(listId);
+        if (elements.countByListId(listId) == 0) {
             throw new BadRequestException("The list has no elements to train");
         }
         return trainings.findPendingByListId(listId)
@@ -211,22 +244,18 @@ public class TrainingService implements TrainingUseCases, TrainingLaunchService,
 
     @Override
     @Transactional
-    public TrainingLaunchCommand prepareLaunch(Long trainingId, Long userId, String embeddingModel,
-                                               boolean regenerateDescriptions, boolean noDescriptions) {
+    public Training enqueue(Long trainingId, Long userId, String embeddingModel,
+                            boolean regenerateDescriptions, boolean noDescriptions) {
         Training training = trainings.findByIdAndUserId(trainingId, userId)
                 .orElseThrow(() -> new NotFoundException("Training not found"));
         if (training.status() != TrainingStatus.PENDING) {
             throw new ConflictException("Only a pending training can be launched");
         }
         Long listId = training.listId();
-        assertLaunchCapacity(listId);
-        ItemList list = lists.findById(listId)
-                .orElseThrow(() -> new NotFoundException("List not found"));
-        List<Element> listElements = elements.findByListId(listId);
-        if (listElements.isEmpty()) {
+        assertNoRunInProgress(listId);
+        if (elements.countByListId(listId) == 0) {
             throw new BadRequestException("The list has no elements to train");
         }
-
         // force_enrich es la opción que el worker ya entiende (steps/enrich.py): con ella ignora
         // el enriquecimiento cacheado y regenera las descripciones LLM de todos los elementos,
         // devolviéndolas en el webhook (que las re-cachea). Con noDescriptions se envía en su
@@ -242,6 +271,56 @@ public class TrainingService implements TrainingUseCases, TrainingLaunchService,
                         new TrainingOption("embedding_model", resolveEmbeddingModel(embeddingModel)),
                         new TrainingOption("force_enrich", regenerateDescriptions));
         training.markQueued(options);
+        Training queued = trainings.save(training);
+        log.info("Training {} queued for list {}", queued.id(), listId);
+        return queued;
+    }
+
+    /** Una lista no admite dos runs a la vez (en cola o lanzados). */
+    private void assertNoRunInProgress(Long listId) {
+        if (trainings.existsInProgressByListId(listId)) {
+            throw new ConflictException("The list already has a training queued or in progress");
+        }
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public Optional<Training> pickNextQueued() {
+        List<Training> queued = trainings.findQueued();
+        if (queued.isEmpty()) {
+            return Optional.empty();
+        }
+        int max = properties.maxConcurrent();
+        if (max > 0 && trainings.countLaunched() >= max) {
+            return Optional.empty();
+        }
+        int perUser = properties.maxConcurrentPerUser();
+        Map<Long, Long> launchedByUser = trainings.countLaunchedByUser();
+        // Equidad: el usuario con menos runs en marcha va primero; a igualdad, el más antiguo.
+        return queued.stream()
+                .filter(t -> perUser <= 0 || launchedByUser.getOrDefault(t.userId(), 0L) < perUser)
+                .min(Comparator.<Training>comparingLong(t -> launchedByUser.getOrDefault(t.userId(), 0L))
+                        .thenComparingLong(Training::id));
+    }
+
+    @Override
+    @Transactional
+    public TrainingLaunchCommand prepareLaunch(Long trainingId) {
+        Training training = trainings.findById(trainingId)
+                .orElseThrow(() -> new NotFoundException("Training not found"));
+        if (training.status() != TrainingStatus.QUEUED) {
+            throw new ConflictException("Only a queued training can be launched");
+        }
+        Long listId = training.listId();
+        ItemList list = lists.findById(listId)
+                .orElseThrow(() -> new NotFoundException("List not found"));
+        List<Element> listElements = elements.findByListId(listId);
+        if (listElements.isEmpty()) {
+            throw new BadRequestException("The list has no elements to train");
+        }
+        boolean noDescriptions = "embeddings_only".equals(training.option("strategy"));
+        boolean regenerate = Boolean.TRUE.equals(training.option("force_enrich"));
+
         // Se reentrena la lista entera, así que nada está "entrenado" hasta que complete.
         elements.markAllTrained(listId, false);
 
@@ -257,32 +336,15 @@ public class TrainingService implements TrainingUseCases, TrainingLaunchService,
         training.recordElementIds(payload.stream().map(TrainingLaunchCommand.ElementPayload::id).toList());
         // El precio queda fijado aquí, antes de que el worker toque nada: al completar solo se
         // le suma el coste de cómputo reportado.
-        CostEstimate preset = presetCost(listElements, regenerateDescriptions, noDescriptions);
+        CostEstimate preset = presetCost(listElements, regenerate, noDescriptions);
         training.priceAtLaunch(new TrainingCost(null, preset.fixed(), preset.enrichment(), preset.total()));
         trainings.save(training);
 
         return new TrainingLaunchCommand(
-                training.id(), listId, userId,
+                training.id(), listId, training.userId(),
                 properties.callbackUrl(),
                 new TrainingLaunchCommand.ListPayload(list.id(), list.name(), list.description()),
-                payload, options);
-    }
-
-    /**
-     * Reglas de admisión de un lanzamiento: la lista no puede tener otro run sin terminar, y el
-     * total de runs del backend no puede superar {@code xeye.training.max-concurrent} (cada run
-     * es un contenedor worker; el tope evita saturar la máquina). El orquestador serializa los
-     * lanzamientos, así que dos peticiones concurrentes no pueden colarse por el mismo hueco.
-     */
-    private void assertLaunchCapacity(Long listId) {
-        if (trainings.existsRunningByListId(listId)) {
-            throw new ConflictException("The list already has a training in progress");
-        }
-        int max = properties.maxConcurrent();
-        if (max > 0 && trainings.countRunning() >= max) {
-            throw new ConflictException("The maximum number of concurrent trainings (" + max
-                    + ") has been reached; try again when one finishes");
-        }
+                payload, training.options());
     }
 
     private String resolveEmbeddingModel(String requested) {
@@ -313,6 +375,9 @@ public class TrainingService implements TrainingUseCases, TrainingLaunchService,
     @Transactional
     public void markFailed(Long trainingId, String error) {
         trainings.findById(trainingId).ifPresent(training -> {
+            if (training.status().isTerminal()) {
+                return;
+            }
             training.markFailed(error);
             trainings.save(training);
         });
@@ -321,43 +386,67 @@ public class TrainingService implements TrainingUseCases, TrainingLaunchService,
     @Override
     @Transactional
     public List<Training> failStalled(Instant cutoff) {
-        List<Training> stalled = trainings.findRunningUpdatedBefore(cutoff);
+        List<Training> stalled = trainings.findLaunchedWithHeartbeatBefore(cutoff);
         for (Training training : stalled) {
-            log.warn("Training {} for list {} stalled in status {}; marking failed",
-                    training.id(), training.listId(), training.status().value());
-            training.markFailed("The training stopped reporting progress and was marked as stalled");
+            log.warn("Training {} for list {} stalled in status {} (last heartbeat {}); marking failed",
+                    training.id(), training.listId(), training.status().value(), training.lastHeartbeatAt());
+            training.markStalled();
             trainings.save(training);
         }
         return stalled;
     }
 
+    // ---- Callbacks ----
+
     @Override
     @Transactional
-    public void applyUpdate(TrainingUpdateCommand update) {
+    public boolean applyUpdate(TrainingUpdateCommand update) {
         Training training = trainings.findById(update.trainingId())
                 .orElseThrow(() -> new NotFoundException("Training not found: " + update.trainingId()));
+        if (update.listId() != null && !update.listId().equals(training.listId())) {
+            throw new BadRequestException("Training " + training.id() + " does not belong to list "
+                    + update.listId(), "TRAINING_LIST_MISMATCH");
+        }
         TrainingStatus status = TrainingStatus.fromString(update.status());
         switch (status) {
-            case OPTIMIZING -> {
-                training.markOptimizing();
+            case OPTIMIZING, TRAINING -> {
+                if (!training.applyProgress(status)) {
+                    return ignored(training, status);
+                }
                 trainings.save(training);
-            }
-            case TRAINING -> {
-                training.markTraining();
-                trainings.save(training);
+                return true;
             }
             case FAILED -> {
+                if (!training.canFail()) {
+                    return ignored(training, status);
+                }
                 training.markFailed(update.error());
                 trainings.save(training);
+                return true;
             }
-            case COMPLETED -> complete(training, update);
-            default -> log.warn("Ignoring training update {} with non-callback status {}",
-                    update.trainingId(), status);
+            case COMPLETED -> {
+                if (!training.canComplete()) {
+                    return ignored(training, status);
+                }
+                complete(training, update);
+                return true;
+            }
+            default -> throw new BadRequestException("Status '" + status.value()
+                    + "' is not a valid worker callback", "INVALID_CALLBACK_STATUS");
         }
+    }
+
+    private boolean ignored(Training training, TrainingStatus reported) {
+        log.info("Ignoring callback {} for training {} in status {} (duplicate, late or out of order)",
+                reported.value(), training.id(), training.status().value());
+        return false;
     }
 
     private void complete(Training training, TrainingUpdateCommand update) {
         Long listId = training.listId();
+        if (update.embeddingsData() == null || update.embeddingsData().isBlank()) {
+            throw new BadRequestException("A completed callback must carry embeddings_data", "MISSING_EMBEDDINGS");
+        }
         // Primero los updates masivos (limpian el contexto de persistencia), después el save de la entidad.
         trainings.clearInUseForList(listId);
         if (update.generatedDescriptions() != null && !update.generatedDescriptions().isEmpty()) {
@@ -369,34 +458,76 @@ public class TrainingService implements TrainingUseCases, TrainingLaunchService,
         // por elemento, así que pueden volver menos descripciones de las estimadas al lanzar.
         int generated = update.generatedDescriptions() == null ? 0 : update.generatedDescriptions().size();
         double enrichmentCost = Math.round(generated * Math.max(0, properties.pricing().perDescription()) * 1e6) / 1e6;
-        training.markCompleted(update.embeddingsData(), update.model(), update.time(), update.cost(),
-                enrichmentCost, update.describedCount());
-        trainings.save(training);
-        pushToSearch(training);
-        log.info("Training {} completed for list {}", training.id(), listId);
+        // clearInUseForList subió la versión de esta fila: se relee para no chocar con el bloqueo optimista.
+        Training fresh = trainings.findById(training.id())
+                .orElseThrow(() -> new NotFoundException("Training not found: " + training.id()));
+        fresh.markCompleted(true, update.model(), update.time(), update.cost(), enrichmentCost, update.describedCount());
+        Training saved = trainings.save(fresh);
+        trainings.saveEmbeddings(saved.id(), update.embeddingsData());
+        events.publishEvent(new SearchIndexRequestedEvent(listId, saved.id()));
+        log.info("Training {} completed for list {}", saved.id(), listId);
     }
 
-    private void pushToSearch(Training training) {
-        lists.findById(training.listId()).ifPresent(list -> {
-            List<SearchIndexCommand.Element> payload = elements.findByListId(training.listId()).stream()
-                    .map(this::toSearchElement)
-                    .toList();
-            try {
-                searchIndexer.index(new SearchIndexCommand(
-                        list.id(), list.userId(), list.name(), list.isPublic(),
-                        training.embeddingsData(), training.model(), training.elementIds(), payload));
-            } catch (Exception ex) {
-                // Un fallo de búsqueda nunca debe revertir el training completado: el worker no
-                // reintenta el webhook y búsqueda recarga perezosamente de todos modos.
-                log.warn("Search index push failed for list {} (search will lazy-load): {}",
-                        list.id(), ex.getMessage());
-            }
-        });
+    // ---- Push a búsqueda (desde el outbox, fuera de transacción) ----
+
+    @Override
+    public void pushToSearch(Long trainingId) {
+        SearchIndexCommand command = buildIndexCommand(trainingId);
+        if (command == null) {
+            return;
+        }
+        searchIndexer.index(command);
+    }
+
+    /** Solo lecturas (cada una en su propia transacción corta); la llamada HTTP queda fuera. */
+    private SearchIndexCommand buildIndexCommand(Long trainingId) {
+        Training training = trainings.findById(trainingId).orElse(null);
+        if (training == null || !training.inUse() || training.status() != TrainingStatus.COMPLETED) {
+            log.debug("Training {} is no longer the active model; skipping search push", trainingId);
+            return null;
+        }
+        ItemList list = lists.findById(training.listId()).orElse(null);
+        if (list == null) {
+            return null;
+        }
+        String embeddings = trainings.findEmbeddings(trainingId).orElse(null);
+        if (embeddings == null) {
+            log.warn("Training {} has no stored embeddings; skipping search push", trainingId);
+            return null;
+        }
+        List<SearchIndexCommand.Element> payload = elements.findByListId(list.id()).stream()
+                .map(this::toSearchElement)
+                .toList();
+        return new SearchIndexCommand(list.id(), list.userId(), list.name(), list.isPublic(),
+                embeddings, training.model(), training.elementIds(), payload);
     }
 
     private SearchIndexCommand.Element toSearchElement(Element element) {
         return new SearchIndexCommand.Element(
                 element.id(), element.text(), element.params(),
                 element.description(), element.generatedDescription());
+    }
+
+    // ---- Retención ----
+
+    @Override
+    public int purgeExpired() {
+        int days = properties.retentionDays();
+        if (days <= 0) {
+            return 0;
+        }
+        Instant cutoff = Instant.now().minus(Duration.ofDays(days));
+        int total = 0;
+        for (int i = 0; i < MAX_PURGE_BATCHES_PER_RUN; i++) {
+            int deleted = trainings.deleteTerminalNotInUseBefore(cutoff, PURGE_BATCH);
+            total += deleted;
+            if (deleted < PURGE_BATCH) {
+                break;
+            }
+        }
+        if (total > 0) {
+            log.info("Purged {} finished training(s) older than {} days", total, days);
+        }
+        return total;
     }
 }

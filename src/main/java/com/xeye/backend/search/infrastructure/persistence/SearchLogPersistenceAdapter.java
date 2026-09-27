@@ -2,12 +2,14 @@ package com.xeye.backend.search.infrastructure.persistence;
 
 import com.xeye.backend.search.application.port.out.SearchLogRepository;
 import com.xeye.backend.search.domain.model.SearchLog;
-import org.springframework.data.domain.Limit;
+import com.xeye.backend.shared.paging.Page;
+import com.xeye.backend.shared.paging.Paging;
+import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 
-import java.util.List;
+import java.time.Instant;
 
 @Component
 public class SearchLogPersistenceAdapter implements SearchLogRepository {
@@ -25,9 +27,15 @@ public class SearchLogPersistenceAdapter implements SearchLogRepository {
     }
 
     @Override
-    public List<SearchLog> findByListId(Long listId, int limit) {
-        return jpa.findByListIdOrderByIdDesc(listId, Limit.of(limit)).stream()
-                .map(SearchLogMapper::toDomain)
-                .toList();
+    public Page<SearchLog> findByListId(Long listId, Paging paging) {
+        var result = jpa.findByListIdOrderByIdDesc(listId, PageRequest.of(paging.pageNumber(), paging.limit()));
+        return new Page<>(result.getContent().stream().map(SearchLogMapper::toDomain).toList(),
+                result.getTotalElements(), paging.offset(), paging.limit());
+    }
+
+    @Override
+    @Transactional
+    public int deleteSearchedBefore(Instant cutoff, int batchSize) {
+        return jpa.deleteSearchedBefore(cutoff, batchSize);
     }
 }

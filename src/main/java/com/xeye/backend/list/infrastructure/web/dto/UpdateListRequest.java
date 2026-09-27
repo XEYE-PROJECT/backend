@@ -6,6 +6,6 @@ import jakarta.validation.constraints.Size;
 /** Todos los campos son opcionales; solo se aplican los no nulos. */
 public record UpdateListRequest(
         @Size(max = 100) String name,
-        String description,
+        @Size(max = 2000) String description,
         @JsonProperty("public") Boolean isPublic) {
 }

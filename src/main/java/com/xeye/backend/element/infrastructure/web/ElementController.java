@@ -3,28 +3,36 @@ package com.xeye.backend.element.infrastructure.web;
 import com.xeye.backend.element.application.command.CreateElementCommand;
 import com.xeye.backend.element.application.command.UpdateElementCommand;
 import com.xeye.backend.element.application.port.in.ElementUseCases;
+import com.xeye.backend.element.domain.model.Element;
 import com.xeye.backend.element.infrastructure.web.dto.CreateElementRequest;
 import com.xeye.backend.element.infrastructure.web.dto.ElementResponse;
 import com.xeye.backend.element.infrastructure.web.dto.ImportElementsRequest;
 import com.xeye.backend.element.infrastructure.web.dto.UpdateElementRequest;
+import com.xeye.backend.shared.exception.BadRequestException;
+import com.xeye.backend.shared.paging.PageResponse;
+import com.xeye.backend.shared.paging.Paging;
 import com.xeye.backend.shared.security.AuthenticatedUser;
 import jakarta.validation.Valid;
-import tools.jackson.databind.ObjectMapper;
+import jakarta.validation.constraints.Size;
 import org.springframework.http.HttpStatus;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
+import org.springframework.validation.annotation.Validated;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestController;
+import tools.jackson.databind.ObjectMapper;
 
 import java.util.List;
 
 /** Los elementos se listan/crean bajo su lista ({@code /lists/{listId}/elements}) y se actualizan/borran por su propio id ({@code /elements/{id}}). */
 @RestController
+@Validated
 public class ElementController {
 
     private final ElementUseCases elements;
@@ -35,10 +43,15 @@ public class ElementController {
         this.json = json;
     }
 
+    /** Página de elementos ({@code ?offset&limit}, máx. 200) con filtro {@code ?q=} sobre texto/descripción. */
     @GetMapping("/lists/{listId}/elements")
-    public List<ElementResponse> listByList(@AuthenticationPrincipal AuthenticatedUser current,
-                                            @PathVariable Long listId) {
-        return elements.listByList(current.id(), listId).stream().map(ElementResponse::from).toList();
+    public PageResponse<ElementResponse> listByList(@AuthenticationPrincipal AuthenticatedUser current,
+                                                    @PathVariable Long listId,
+                                                    @RequestParam(required = false) Integer offset,
+                                                    @RequestParam(required = false) Integer limit,
+                                                    @RequestParam(name = "q", required = false) @Size(max = 200) String query) {
+        return PageResponse.from(elements.listByList(current.id(), listId, query, Paging.of(offset, limit)),
+                ElementResponse::from);
     }
 
     @PostMapping("/lists/{listId}/elements")
@@ -68,10 +81,12 @@ public class ElementController {
         if (params == null) {
             return null;
         }
-        if (params instanceof String text) {
-            return text.isBlank() ? null : text;
+        String text = params instanceof String s ? (s.isBlank() ? null : s) : json.writeValueAsString(params);
+        if (text != null && text.length() > Element.MAX_PARAMS_LENGTH) {
+            throw new BadRequestException("Element params must be at most " + Element.MAX_PARAMS_LENGTH
+                    + " characters", "VALIDATION_FAILED");
         }
-        return json.writeValueAsString(params);
+        return text;
     }
 
     @PutMapping("/elements/{id}")

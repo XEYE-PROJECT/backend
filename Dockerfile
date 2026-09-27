@@ -27,7 +27,16 @@ ENV SPRING_PROFILES_ACTIVE=prod
 ARG GIT_SHA=unknown
 ENV SENTRY_RELEASE=${GIT_SHA}
 
+# Flags JVM por defecto (JAVA_OPTS los sustituye entero; JAVA_TOOL_OPTIONS del entorno se
+# suma): heap relativo al límite de memoria del contenedor, salir (y que docker reinicie) ante
+# un OutOfMemoryError en vez de quedarse zombi, GC serie (un solo servicio pequeño, poca RAM).
+ENV JAVA_OPTS="-XX:MaxRAMPercentage=65.0 -XX:+ExitOnOutOfMemoryError -XX:+UseSerialGC -Djava.security.egd=file:/dev/./urandom"
+
 EXPOSE 8000
+# Readiness: incluye la BD (sin ella el servicio no puede atender nada). Liveness (solo el
+# proceso) queda para /actuator/health/liveness si algún orquestador la necesita.
 HEALTHCHECK --interval=30s --timeout=5s --start-period=120s --retries=5 \
-    CMD curl -fsS http://localhost:8000/actuator/health || exit 1
-ENTRYPOINT ["java", "-jar", "app.jar"]
+    CMD curl -fsS http://localhost:8000/actuator/health/readiness || exit 1
+# `exec` para que java sea PID 1 y reciba el SIGTERM de docker stop: apagado ordenado de Spring
+# (server.shutdown=graceful) dentro del stop_grace_period del compose.
+ENTRYPOINT ["sh", "-c", "exec java $JAVA_OPTS -jar app.jar"]

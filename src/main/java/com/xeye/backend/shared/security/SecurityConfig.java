@@ -29,7 +29,7 @@ import java.util.Map;
  * por jti y versión de sesión), rate limit por IP en los endpoints públicos de autenticación y dos
  * filtros de secreto compartido para las llamadas servidor-a-servidor ({@code /webhooks/**} del
  * worker de training, {@code /internal/**} del search-service), que exigen su rol de servicio.
- * Públicos: {@code /auth/**} (salvo logout) y {@code /actuator/health}; {@code /admin/**} exige
+ * Públicos: {@code /auth/**} (salvo logout) y {@code /actuator/health} (+ liveness/readiness); {@code /admin/**} exige
  * ROLE_ADMIN (además del {@code @PreAuthorize} de cada controlador); todo lo demás exige JWT.
  */
 @Configuration
@@ -66,7 +66,7 @@ public class SecurityConfig {
                 .sessionManagement(sm -> sm.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
                 .authorizeHttpRequests(auth -> auth
                         .requestMatchers("/auth/logout", "/auth/logout-all").authenticated()
-                        .requestMatchers("/auth/**", "/actuator/health").permitAll()
+                        .requestMatchers("/auth/**", "/actuator/health", "/actuator/health/**").permitAll()
                         .requestMatchers("/admin/**").hasRole(ROLE_ADMIN)
                         // Sin JWT: los autentica SharedSecretAuthenticationFilter con su cabecera.
                         .requestMatchers("/webhooks/**").hasRole(ROLE_TRAINING_WORKER)

@@ -2,6 +2,10 @@ package com.xeye.backend.apikey.infrastructure.persistence;
 
 import com.xeye.backend.apikey.application.port.out.ApiKeyRepository;
 import com.xeye.backend.apikey.domain.model.ApiKey;
+import com.xeye.backend.shared.paging.Page;
+import com.xeye.backend.shared.paging.Paging;
+import org.springframework.data.domain.Limit;
+import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Component;
 
 import java.util.List;
@@ -17,13 +21,16 @@ public class ApiKeyPersistenceAdapter implements ApiKeyRepository {
     }
 
     @Override
-    public List<ApiKey> findByUserId(Long userId) {
-        return jpa.findByUserIdOrderByIdAsc(userId).stream().map(ApiKeyMapper::toDomain).toList();
+    public Page<ApiKey> findByUserId(Long userId, Paging paging) {
+        var result = jpa.findByUserIdOrderByIdAsc(userId, PageRequest.of(paging.pageNumber(), paging.limit()));
+        return new Page<>(result.getContent().stream().map(ApiKeyMapper::toDomain).toList(),
+                result.getTotalElements(), paging.offset(), paging.limit());
     }
 
     @Override
-    public List<ApiKey> findAll() {
-        return jpa.findAll().stream().map(ApiKeyMapper::toDomain).toList();
+    public List<ApiKey> findAfterId(long afterId, int limit) {
+        return jpa.findByIdGreaterThanOrderByIdAsc(afterId, Limit.of(limit)).stream()
+                .map(ApiKeyMapper::toDomain).toList();
     }
 
     @Override

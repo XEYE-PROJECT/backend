@@ -6,6 +6,7 @@ import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
 import jakarta.persistence.Table;
+import jakarta.persistence.Version;
 import org.hibernate.annotations.Generated;
 import org.hibernate.generator.EventType;
 
@@ -30,6 +31,11 @@ public class ListJpaEntity {
 
     @Column(name = "user_id", nullable = false)
     private Long userId;
+
+    /** Bloqueo optimista: dos ediciones concurrentes de la misma lista → la segunda recibe 409. */
+    @Version
+    @Column(nullable = false)
+    private Long version;
 
     @Generated(event = EventType.INSERT)
     @Column(name = "created_at", insertable = false, updatable = false)
@@ -80,6 +86,14 @@ public class ListJpaEntity {
 
     public void setUserId(Long userId) {
         this.userId = userId;
+    }
+
+    public Long getVersion() {
+        return version;
+    }
+
+    public void setVersion(Long version) {
+        this.version = version;
     }
 
     public Instant getCreatedAt() {

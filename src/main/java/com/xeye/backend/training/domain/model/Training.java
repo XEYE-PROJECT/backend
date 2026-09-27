@@ -5,11 +5,16 @@ import java.util.List;
 import java.util.Objects;
 
 /**
- * Un training de una lista. Las transiciones son laxas a propósito (los webhooks pueden llegar
- * desordenados); gana la última escritura. {@code inUse} marca el training cuyo modelo está
- * activo para la lista — se fija al completar y se limpia cuando completa uno más nuevo.
+ * Un training de una lista. Las transiciones las fija {@link TrainingStatus#canTransitionTo}:
+ * los callbacks del worker solo avanzan, un estado repetido es un latido y un run terminado no
+ * cambia (los webhooks son idempotentes). {@code inUse} marca el training cuyo modelo está
+ * activo para la lista. Los embeddings viven en su propia tabla: aquí solo {@code hasEmbeddings}.
+ * {@code lastHeartbeatAt} lo actualiza cada callback y lo vigila el barrido de estancados.
  */
 public class Training {
+
+    /** Mensaje con el que el barrido marca un run estancado; un {@code completed} tardío aún gana. */
+    public static final String STALLED_ERROR = "The training stopped reporting progress and was marked as stalled";
 
     private final Long id;
     private final Long listId;
@@ -21,19 +26,22 @@ public class Training {
     private List<Long> elementIds;
     /** Elementos con descripción LLM (caché + generadas) al calcular los embeddings; puede ser < elementIds.size(). */
     private Integer describedCount;
-    private String embeddingsData;
+    private boolean hasEmbeddings;
     private String model;
     private TrainingTime time;
     private TrainingCost cost;
     private String error;
     private boolean inUse;
+    private Instant lastHeartbeatAt;
+    private final Long version;
     private final Instant createdAt;
     private final Instant updatedAt;
 
     public Training(Long id, Long listId, Long userId, String instanceId, TrainingStatus status,
                     List<TrainingOption> options, List<Long> elementIds, Integer describedCount,
-                    String embeddingsData, String model, TrainingTime time, TrainingCost cost,
-                    String error, boolean inUse, Instant createdAt, Instant updatedAt) {
+                    boolean hasEmbeddings, String model, TrainingTime time, TrainingCost cost,
+                    String error, boolean inUse, Instant lastHeartbeatAt, Long version,
+                    Instant createdAt, Instant updatedAt) {
         this.id = id;
         this.listId = Objects.requireNonNull(listId, "listId");
         this.userId = Objects.requireNonNull(userId, "userId");
@@ -42,12 +50,14 @@ public class Training {
         this.options = options;
         this.elementIds = elementIds;
         this.describedCount = describedCount;
-        this.embeddingsData = embeddingsData;
+        this.hasEmbeddings = hasEmbeddings;
         this.model = model;
         this.time = time;
         this.cost = cost;
         this.error = error;
         this.inUse = inUse;
+        this.lastHeartbeatAt = lastHeartbeatAt;
+        this.version = version;
         this.createdAt = createdAt;
         this.updatedAt = updatedAt;
     }
@@ -55,13 +65,15 @@ public class Training {
     /** Hubo una edición: la lista necesita reentrenar, pero el usuario decide cuándo (y con qué modelo). */
     public static Training pending(Long listId, Long userId) {
         return new Training(null, listId, userId, null, TrainingStatus.PENDING, null,
-                null, null, null, null, null, null, null, false, null, null);
+                null, null, false, null, null, null, null, false, null, null, null, null);
     }
 
-    /** El usuario lanza este training pendiente; las opciones fijan el run (modelo, train_all…). */
+    /** El usuario lanza este training pendiente: entra en cola con las opciones que fijan el run. */
     public void markQueued(List<TrainingOption> options) {
+        require(TrainingStatus.QUEUED);
         this.options = options;
         this.status = TrainingStatus.QUEUED;
+        this.lastHeartbeatAt = Instant.now();
     }
 
     /** Captura el conjunto de elementos en el lanzamiento (el orden de filas de la matriz de embeddings). */
@@ -74,29 +86,61 @@ public class Training {
         this.cost = cost;
     }
 
+    /**
+     * El provider aceptó el run. Si el worker ya llamó (un callback puede adelantarse a esta
+     * escritura), el estado no retrocede: solo se anota el id de instancia.
+     */
     public void markLaunched(String instanceId) {
         this.instanceId = instanceId;
-        this.status = TrainingStatus.INITIALIZED;
+        this.lastHeartbeatAt = Instant.now();
+        if (status == TrainingStatus.QUEUED) {
+            this.status = TrainingStatus.INITIALIZED;
+        }
     }
 
-    public void markOptimizing() {
-        this.status = TrainingStatus.OPTIMIZING;
+    /**
+     * Aplica un callback de progreso del worker. Devuelve false si se ignora (regresión,
+     * run terminado, estado no permitido); un estado repetido cuenta como latido.
+     */
+    public boolean applyProgress(TrainingStatus reported) {
+        if (reported != TrainingStatus.OPTIMIZING && reported != TrainingStatus.TRAINING) {
+            return false;
+        }
+        if (!status.canTransitionTo(reported)) {
+            return false;
+        }
+        this.status = reported;
+        this.lastHeartbeatAt = Instant.now();
+        return true;
     }
 
-    public void markTraining() {
-        this.status = TrainingStatus.TRAINING;
+    /** ¿Puede este run recibir un {@code completed}? (en marcha, o estancado por el barrido). */
+    public boolean canComplete() {
+        return status.canTransitionTo(TrainingStatus.COMPLETED) || wasStalled();
     }
 
-    public void markCompleted(String embeddingsData, String model, TrainingTime time, TrainingCost reportedCost,
+    public boolean canFail() {
+        return status.canTransitionTo(TrainingStatus.FAILED);
+    }
+
+    public boolean wasStalled() {
+        return status == TrainingStatus.FAILED && STALLED_ERROR.equals(error);
+    }
+
+    public void markCompleted(boolean hasEmbeddings, String model, TrainingTime time, TrainingCost reportedCost,
                               Double actualEnrichmentCost, Integer describedCount) {
+        if (!canComplete()) {
+            throw new IllegalStateException("Training " + id + " cannot complete from status " + status.value());
+        }
         this.status = TrainingStatus.COMPLETED;
-        this.embeddingsData = embeddingsData;
+        this.hasEmbeddings = hasEmbeddings;
         this.model = model;
         this.time = time;
         this.describedCount = describedCount;
         this.cost = mergeCost(this.cost, reportedCost, actualEnrichmentCost);
         this.error = null;
         this.inUse = true;
+        this.lastHeartbeatAt = Instant.now();
     }
 
     public void markFailed(String error) {
@@ -104,6 +148,11 @@ public class Training {
         this.error = error;
         this.inUse = false;
         this.cost = null; // un entrenamiento fallido no se cobra
+        this.lastHeartbeatAt = Instant.now();
+    }
+
+    public void markStalled() {
+        markFailed(STALLED_ERROR);
     }
 
     /**
@@ -132,6 +181,21 @@ public class Training {
 
     public void deactivate() {
         this.inUse = false;
+    }
+
+    /** Valor de una opción del run ({@code embedding_model}, {@code force_enrich}, {@code strategy}…), o null. */
+    public Object option(String key) {
+        if (options == null) {
+            return null;
+        }
+        return options.stream().filter(o -> key.equals(o.key())).map(TrainingOption::value).findFirst().orElse(null);
+    }
+
+    private void require(TrainingStatus next) {
+        if (!status.canTransitionTo(next)) {
+            throw new IllegalStateException("Training " + id + " cannot go from " + status.value()
+                    + " to " + next.value());
+        }
     }
 
     public Long id() {
@@ -166,8 +230,8 @@ public class Training {
         return describedCount;
     }
 
-    public String embeddingsData() {
-        return embeddingsData;
+    public boolean hasEmbeddings() {
+        return hasEmbeddings;
     }
 
     public String model() {
@@ -188,6 +252,14 @@ public class Training {
 
     public boolean inUse() {
         return inUse;
+    }
+
+    public Instant lastHeartbeatAt() {
+        return lastHeartbeatAt;
+    }
+
+    public Long version() {
+        return version;
     }
 
     public Instant createdAt() {

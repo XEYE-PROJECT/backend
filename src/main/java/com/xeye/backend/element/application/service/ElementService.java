@@ -11,6 +11,8 @@ import com.xeye.backend.list.domain.model.ItemList;
 import com.xeye.backend.shared.event.ListElementsChangedEvent;
 import com.xeye.backend.shared.event.TrainingRequestedEvent;
 import com.xeye.backend.shared.exception.NotFoundException;
+import com.xeye.backend.shared.paging.Page;
+import com.xeye.backend.shared.paging.Paging;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -33,9 +35,10 @@ public class ElementService implements ElementUseCases, ElementQueryPort {
 
     @Override
     @Transactional(readOnly = true)
-    public List<Element> listByList(Long userId, Long listId) {
+    public Page<Element> listByList(Long userId, Long listId, String query, Paging paging) {
         requireOwnedList(userId, listId);
-        return elements.findByListId(listId);
+        String normalized = query == null || query.isBlank() ? null : query.trim();
+        return elements.findByListId(listId, normalized, paging);
     }
 
     @Override
@@ -53,10 +56,11 @@ public class ElementService implements ElementUseCases, ElementQueryPort {
     @Transactional
     public List<Element> importElements(Long userId, Long listId, List<CreateElementCommand> commands) {
         requireOwnedList(userId, listId);
-        List<Element> created = commands.stream()
-                .map(command -> elements.save(
-                        Element.create(listId, command.text(), command.params(), command.description())))
+        // Se validan todos antes de insertar ninguno: una fila mala rechaza la importación entera.
+        List<Element> toCreate = commands.stream()
+                .map(command -> Element.create(listId, command.text(), command.params(), command.description()))
                 .toList();
+        List<Element> created = elements.saveAll(toCreate);
         if (!created.isEmpty()) {
             requestTraining(listId, userId, "elements imported");
             notifySearchDataChanged(listId, userId);
@@ -115,6 +119,12 @@ public class ElementService implements ElementUseCases, ElementQueryPort {
     }
 
     @Override
+    @Transactional(readOnly = true)
+    public long countByListId(Long listId) {
+        return elements.countByListId(listId);
+    }
+
+    @Override
     @Transactional
     public void markAllTrained(Long listId, boolean trained) {
         elements.updateTrainedByListId(listId, trained);
@@ -125,8 +135,7 @@ public class ElementService implements ElementUseCases, ElementQueryPort {
     public void saveGeneratedDescriptions(Long listId, Map<Long, String> byElementId) {
         // Sin evento de entrenamiento ni cambio de `trained`: el enriquecimiento deriva del
         // elemento, no lo modifica. Los borrados a mitad de entrenamiento no casan con ninguna fila.
-        byElementId.forEach((elementId, generated) ->
-                elements.updateGeneratedDescription(listId, elementId, generated));
+        elements.updateGeneratedDescriptions(listId, byElementId);
     }
 
     private ItemList requireOwnedList(Long userId, Long listId) {

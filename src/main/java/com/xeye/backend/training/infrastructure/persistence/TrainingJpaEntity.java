@@ -6,15 +6,17 @@ import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
 import jakarta.persistence.Table;
+import jakarta.persistence.Version;
 import org.hibernate.annotations.Generated;
 import org.hibernate.generator.EventType;
 
 import java.time.Instant;
 
 /**
- * Mapeo JPA de {@code trainings}. Las columnas JSON (options/time/cost) y los dos blobs grandes
- * (embeddings_data/model) se guardan como strings — el adapter (de)serializa las estructuradas
- * con Jackson. {@code `time`} va entrecomillado por ser palabra reservada.
+ * Mapeo JPA de {@code trainings}. Las columnas JSON (options/time/cost) y {@code model} se guardan
+ * como strings — el adapter (de)serializa las estructuradas con Jackson. Los embeddings viven en
+ * {@code training_embeddings} ({@link TrainingEmbeddingsJpaEntity}); aquí solo el flag.
+ * {@code `time`} va entrecomillado por ser palabra reservada.
  */
 @Entity
 @Table(name = "trainings")
@@ -45,11 +47,11 @@ public class TrainingJpaEntity {
     @Column(name = "described_count")
     private Integer describedCount;
 
-    @Column(name = "embeddings_data", columnDefinition = "longtext")
-    private String embeddingsData;
-
     @Column(columnDefinition = "longtext")
     private String model;
+
+    @Column(name = "has_embeddings", nullable = false)
+    private boolean hasEmbeddings;
 
     @Column(name = "`time`", columnDefinition = "json")
     private String time;
@@ -62,6 +64,14 @@ public class TrainingJpaEntity {
 
     @Column(name = "in_use", nullable = false)
     private boolean inUse;
+
+    @Column(name = "last_heartbeat_at")
+    private Instant lastHeartbeatAt;
+
+    /** Bloqueo optimista: dos webhooks (o webhook + barrido) sobre el mismo run no se pisan. */
+    @Version
+    @Column(nullable = false)
+    private Long version;
 
     @Generated(event = EventType.INSERT)
     @Column(name = "created_at", insertable = false, updatable = false)
@@ -138,12 +148,12 @@ public class TrainingJpaEntity {
         this.describedCount = describedCount;
     }
 
-    public String getEmbeddingsData() {
-        return embeddingsData;
+    public boolean isHasEmbeddings() {
+        return hasEmbeddings;
     }
 
-    public void setEmbeddingsData(String embeddingsData) {
-        this.embeddingsData = embeddingsData;
+    public void setHasEmbeddings(boolean hasEmbeddings) {
+        this.hasEmbeddings = hasEmbeddings;
     }
 
     public String getModel() {
@@ -184,6 +194,22 @@ public class TrainingJpaEntity {
 
     public void setInUse(boolean inUse) {
         this.inUse = inUse;
+    }
+
+    public Instant getLastHeartbeatAt() {
+        return lastHeartbeatAt;
+    }
+
+    public void setLastHeartbeatAt(Instant lastHeartbeatAt) {
+        this.lastHeartbeatAt = lastHeartbeatAt;
+    }
+
+    public Long getVersion() {
+        return version;
+    }
+
+    public void setVersion(Long version) {
+        this.version = version;
     }
 
     public Instant getCreatedAt() {

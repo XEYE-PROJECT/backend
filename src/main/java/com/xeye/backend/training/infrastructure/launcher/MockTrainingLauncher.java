@@ -67,7 +67,7 @@ public class MockTrainingLauncher implements TrainingLauncher {
                 .filter(element -> element.generatedDescription() != null)
                 .count();
         TrainingUpdateCommand update = new TrainingUpdateCommand(
-                command.trainingId(), "completed", embeddings, model,
+                command.trainingId(), command.listId(), "completed", embeddings, model,
                 new TrainingTime(0L, 0L, 0L), new TrainingCost(0.0, null, null, 0.0), null, Map.of(), described);
         try {
             completionHandler.applyUpdate(update);

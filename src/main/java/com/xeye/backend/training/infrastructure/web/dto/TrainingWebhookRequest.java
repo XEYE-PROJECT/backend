@@ -6,25 +6,27 @@ import com.xeye.backend.training.domain.model.TrainingCost;
 import com.xeye.backend.training.domain.model.TrainingTime;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
+import jakarta.validation.constraints.Size;
 
 import java.util.HashMap;
 import java.util.Map;
 
 /**
  * Body de {@code POST /webhooks/training-update}. Los nombres de campo son exactamente los
- * que envía el training-service de XEYE (one-shot y handler de RunPod).
+ * que envía el training-service de XEYE (one-shot y handler de RunPod). {@code embeddings_data}
+ * no tiene tope aquí: lo acota el límite de body del webhook ({@code HTTP_WEBHOOK_MAX_BODY_BYTES}).
  */
 public record TrainingWebhookRequest(
         @NotNull @JsonProperty("training_id") Long trainingId,
         @JsonProperty("list_id") Long listId,
-        @NotBlank String status,
+        @NotBlank @Size(max = 30) String status,
         @JsonProperty("embeddings_data") String embeddingsData,
-        String model,
-        String error,
+        @Size(max = 4000) String model,
+        @Size(max = 2000) String error,
         TimePayload time,
         CostPayload cost,
         /** Id de elemento (clave JSON, de ahí String) -> enriquecimiento LLM del worker. */
-        @JsonProperty("generated_descriptions") Map<String, String> generatedDescriptions,
+        @Size(max = 10000) @JsonProperty("generated_descriptions") Map<String, @Size(max = 16000) String> generatedDescriptions,
         /** Elementos con descripción LLM (caché + generadas) al calcular los embeddings. */
         @JsonProperty("described_count") Integer describedCount) {
 
@@ -43,8 +45,8 @@ public record TrainingWebhookRequest(
                 : new TrainingTime(time.optimizingSeconds(), time.trainingSeconds(), time.totalSeconds());
         TrainingCost trainingCost = cost == null ? null
                 : new TrainingCost(cost.runpod(), null, null, cost.total());
-        return new TrainingUpdateCommand(trainingId, status, embeddingsData, model, trainingTime, trainingCost,
-                error, parseGeneratedDescriptions(), describedCount);
+        return new TrainingUpdateCommand(trainingId, listId, status, embeddingsData, model, trainingTime,
+                trainingCost, error, parseGeneratedDescriptions(), describedCount);
     }
 
     /** Omite las entradas cuya clave no es numérica en vez de fallar el callback entero. */

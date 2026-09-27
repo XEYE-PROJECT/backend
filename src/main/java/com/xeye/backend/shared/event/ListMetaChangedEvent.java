@@ -5,5 +5,12 @@ package com.xeye.backend.shared.event;
  * visibilidad; la descripción solo importa para training). El módulo search lo reenvía
  * al microservicio tras el commit.
  */
-public record ListMetaChangedEvent(Long listId, Long userId, String name, boolean isPublic) {
+public record ListMetaChangedEvent(Long listId, Long userId, String name, boolean isPublic) implements DomainEvent {
+
+    public static final String TYPE = "LIST_META_CHANGED";
+
+    @Override
+    public String type() {
+        return TYPE;
+    }
 }

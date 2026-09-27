@@ -4,5 +4,12 @@ package com.xeye.backend.shared.event;
  * Publicado por el módulo user al borrar la cuenta. La BD cascadea api_keys/listas/elementos;
  * este evento permite a búsqueda descartar de una vez todo lo que cachea del usuario.
  */
-public record UserDeletedEvent(Long userId) {
+public record UserDeletedEvent(Long userId) implements DomainEvent {
+
+    public static final String TYPE = "USER_DELETED";
+
+    @Override
+    public String type() {
+        return TYPE;
+    }
 }

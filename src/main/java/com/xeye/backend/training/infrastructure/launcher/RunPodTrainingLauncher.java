@@ -2,6 +2,7 @@ package com.xeye.backend.training.infrastructure.launcher;
 
 import com.xeye.backend.training.application.command.TrainingLaunchCommand;
 import com.xeye.backend.training.application.port.out.TrainingLauncher;
+import com.xeye.backend.shared.http.OutboundHttp;
 import com.xeye.backend.training.config.TrainingProperties;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -10,6 +11,7 @@ import org.springframework.http.MediaType;
 import org.springframework.stereotype.Component;
 import org.springframework.web.client.RestClient;
 
+import java.time.Duration;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -19,7 +21,9 @@ import java.util.Map;
  * claves del objeto {@code input} coinciden exactamente con lo que lee el training-service de
  * XEYE, así el worker corre sin cambios. El propio worker entrega el resultado a nuestro
  * webhook con {@code X-Webhook-Token}: el secreto está en las variables del endpoint
- * ({@code WEBHOOK_SECRET}), nunca dentro del job que RunPod almacena.
+ * ({@code WEBHOOK_SECRET}), nunca dentro del job que RunPod almacena. La llamada tiene timeout
+ * de conexión y de lectura ({@code RUNPOD_TIMEOUT_SECONDS}) y NO se reintenta: un {@code /run}
+ * repetido lanzaría (y cobraría) dos jobs; si falla, el training queda fallido y la lista pendiente.
  */
 @Component
 @ConditionalOnProperty(name = "xeye.training.provider", havingValue = "runpod")
@@ -32,7 +36,8 @@ public class RunPodTrainingLauncher implements TrainingLauncher {
 
     public RunPodTrainingLauncher(TrainingProperties properties) {
         this.config = properties.runpod();
-        this.http = RestClient.builder().baseUrl("https://api.runpod.ai/v2").build();
+        int timeout = config == null || config.timeoutSeconds() <= 0 ? 30 : config.timeoutSeconds();
+        this.http = OutboundHttp.client("https://api.runpod.ai/v2", Duration.ofSeconds(timeout));
     }
 
     @Override

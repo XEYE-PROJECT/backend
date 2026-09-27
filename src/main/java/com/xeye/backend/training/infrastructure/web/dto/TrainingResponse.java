@@ -1,14 +1,15 @@
 package com.xeye.backend.training.infrastructure.web.dto;
 
-import java.time.Instant;
-import java.util.List;
-
+import com.xeye.backend.training.application.port.in.TrainingUseCases.ListedTraining;
 import com.xeye.backend.training.domain.model.Training;
 import com.xeye.backend.training.domain.model.TrainingCost;
 import com.xeye.backend.training.domain.model.TrainingOption;
 import com.xeye.backend.training.domain.model.TrainingTime;
 
-/** Vista de un training. El blob grande {@code embeddings_data} no se devuelve (solo un flag). */
+import java.time.Instant;
+import java.util.List;
+
+/** Vista de un training. Los embeddings nunca se devuelven (solo el flag {@code hasEmbeddings}). */
 public record TrainingResponse(
         Long id,
         Long listId,
@@ -26,14 +27,22 @@ public record TrainingResponse(
         boolean inUse,
         boolean hasEmbeddings,
         Boolean usable,
+        /** Posición en la cola (1 = el siguiente) mientras el estado es {@code queued}; null en otro caso. */
+        Integer queuePosition,
+        /** Último callback del worker (latido); null hasta que se lanza. */
+        Instant lastHeartbeatAt,
         Instant createdAt,
         Instant updatedAt) {
 
     public static TrainingResponse from(Training training) {
-        return from(training, null);
+        return from(training, null, null);
     }
 
-    public static TrainingResponse from(Training training, Boolean usable) {
+    public static TrainingResponse from(ListedTraining listed) {
+        return from(listed.training(), listed.usable(), listed.queuePosition());
+    }
+
+    public static TrainingResponse from(Training training, Boolean usable, Integer queuePosition) {
         return new TrainingResponse(
                 training.id(),
                 training.listId(),
@@ -48,8 +57,10 @@ public record TrainingResponse(
                 training.cost(),
                 training.error(),
                 training.inUse(),
-                training.embeddingsData() != null,
+                training.hasEmbeddings(),
                 usable,
+                queuePosition,
+                training.lastHeartbeatAt(),
                 training.createdAt(),
                 training.updatedAt());
     }

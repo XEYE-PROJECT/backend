@@ -13,6 +13,12 @@ public interface TokenIssuer {
     /** @return el id de usuario del token del segundo factor; lanza {@code UnauthorizedException} si no vale */
     Long resolveMfaChallenge(String mfaToken);
 
+    /** Token de dispositivo de confianza (tras pasar el 2FA); vacío si la confianza está desactivada. */
+    String issueMfaTrust(User user);
+
+    /** @return true si el token de confianza corresponde a este usuario, no ha caducado y sigue vigente */
+    boolean isMfaTrusted(User user, String trustToken);
+
     long expiresInMinutes();
 
     record IssuedAccess(String token, long expiresInMinutes) {

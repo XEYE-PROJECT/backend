@@ -18,7 +18,12 @@ public class SessionIssuer {
     }
 
     public LoginOutcome open(User user) {
-        if (user.totpEnabled()) {
+        return open(user, null);
+    }
+
+    /** Con un token de dispositivo de confianza válido se salta el segundo factor. */
+    public LoginOutcome open(User user, String mfaTrustToken) {
+        if (user.totpEnabled() && !tokenIssuer.isMfaTrusted(user, mfaTrustToken)) {
             return new MfaChallenge(tokenIssuer.issueMfaChallenge(user));
         }
         return openWithoutMfa(user);

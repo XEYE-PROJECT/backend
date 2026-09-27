@@ -24,6 +24,8 @@ public class JwtService {
     public static final String PURPOSE_ACCESS = "access";
     public static final String PURPOSE_MFA = "mfa";
     public static final String PURPOSE_SSO_STATE = "sso_state";
+    /** Dispositivo de confianza: permite saltarse el segundo factor durante un tiempo. */
+    public static final String PURPOSE_MFA_TRUST = "mfa_trust";
 
     private final SecretKey key;
     private final long expirationMinutes;

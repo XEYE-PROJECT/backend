@@ -4,6 +4,7 @@ import com.xeye.backend.shared.security.AuthenticatedUser;
 import com.xeye.backend.user.application.command.AuthResult;
 import com.xeye.backend.user.application.command.LoginCommand;
 import com.xeye.backend.user.application.command.LoginOutcome;
+import com.xeye.backend.user.application.command.MfaVerified;
 import com.xeye.backend.user.application.command.MfaVerifyCommand;
 import com.xeye.backend.user.application.command.RegisterUserCommand;
 import com.xeye.backend.user.application.command.ResetPasswordCommand;
@@ -20,7 +21,7 @@ public interface AuthUseCases {
 
     LoginOutcome login(LoginCommand command, String remoteIp);
 
-    AuthResult verifyMfa(MfaVerifyCommand command, String remoteIp);
+    MfaVerified verifyMfa(MfaVerifyCommand command, String remoteIp);
 
     /** Consume el token del enlace (verificación de registro o confirmación de cambio de email) y abre sesión. */
     LoginOutcome verifyEmail(String token);

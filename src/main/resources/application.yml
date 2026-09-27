@@ -84,6 +84,8 @@ xeye:
     admin-emails: ${ADMIN_EMAILS:}
     # Nombre que muestran las apps de 2FA (Google Authenticator, 1Password…).
     mfa-issuer: ${MFA_ISSUER:XEYE}
+    # Días que un dispositivo "recordado" tras el 2FA no vuelve a pedir el código (0 = pedirlo siempre).
+    mfa-trust-days: ${MFA_TRUST_DAYS:30}
     rate-limit:
       # Peticiones por minuto y por IP a los endpoints públicos de auth; <= 0 desactiva.
       login-per-minute: ${AUTH_RATE_LOGIN_PER_MINUTE:10}

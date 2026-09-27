@@ -68,12 +68,14 @@ public class AuthController {
     @PostMapping("/login")
     public LoginResponse login(@Valid @RequestBody LoginRequest request, HttpServletRequest http) {
         return LoginResponse.of(auth.login(
-                new LoginCommand(request.email(), request.password(), request.captchaToken()), http.getRemoteAddr()));
+                new LoginCommand(request.email(), request.password(), request.captchaToken(), request.mfaTrustToken()),
+                http.getRemoteAddr()));
     }
 
     @PostMapping("/mfa")
     public AuthResponse mfa(@Valid @RequestBody MfaVerifyRequest request, HttpServletRequest http) {
-        return AuthResponse.of(auth.verifyMfa(new MfaVerifyCommand(request.mfaToken(), request.code()), http.getRemoteAddr()));
+        return AuthResponse.of(auth.verifyMfa(new MfaVerifyCommand(request.mfaToken(), request.code(),
+                Boolean.TRUE.equals(request.rememberDevice())), http.getRemoteAddr()));
     }
 
     @PostMapping("/verify-email")

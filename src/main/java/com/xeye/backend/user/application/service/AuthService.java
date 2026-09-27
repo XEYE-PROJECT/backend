@@ -12,6 +12,7 @@ import com.xeye.backend.shared.security.Totp;
 import com.xeye.backend.user.application.command.AuthResult;
 import com.xeye.backend.user.application.command.LoginCommand;
 import com.xeye.backend.user.application.command.LoginOutcome;
+import com.xeye.backend.user.application.command.MfaVerified;
 import com.xeye.backend.user.application.command.MfaVerifyCommand;
 import com.xeye.backend.user.application.command.RegisterUserCommand;
 import com.xeye.backend.user.application.command.ResetPasswordCommand;
@@ -132,19 +133,20 @@ public class AuthService implements AuthUseCases {
         promoteIfBootstrapAdmin(user);
         user.recordSuccessfulLogin(now);
         users.save(user);
-        LoginOutcome outcome = sessions.open(user);
-        AuthAuditLog.info(outcome instanceof AuthResult ? "login" : "login_mfa_pending", remoteIp, email, "userId=" + user.id());
+        LoginOutcome outcome = sessions.open(user, command.mfaTrustToken());
+        AuthAuditLog.info(outcome instanceof AuthResult ? "login" : "login_mfa_pending", remoteIp, email,
+                "userId=" + user.id() + (user.totpEnabled() && outcome instanceof AuthResult ? " mfa=trusted-device" : ""));
         return outcome;
     }
 
     @Override
     @Transactional(noRollbackFor = DomainException.class)
-    public AuthResult verifyMfa(MfaVerifyCommand command, String remoteIp) {
+    public MfaVerified verifyMfa(MfaVerifyCommand command, String remoteIp) {
         Long userId = tokenIssuer.resolveMfaChallenge(command.mfaToken());
         User user = users.findById(userId).orElseThrow(this::invalidCredentials);
         Instant now = Instant.now();
         if (!user.totpEnabled()) {
-            return sessions.openWithoutMfa(user);
+            return new MfaVerified(sessions.openWithoutMfa(user), null);
         }
         if (user.isLocked(now)) {
             long retry = Duration.between(now, user.lockedUntil()).toSeconds();
@@ -161,8 +163,9 @@ public class AuthService implements AuthUseCases {
         }
         user.recordSuccessfulLogin(now);
         users.save(user);
-        AuthAuditLog.info("login", remoteIp, user.email(), "userId=" + user.id() + " mfa=true");
-        return sessions.openWithoutMfa(user);
+        String trust = command.rememberDevice() ? tokenIssuer.issueMfaTrust(user) : null;
+        AuthAuditLog.info("login", remoteIp, user.email(), "userId=" + user.id() + " mfa=true remember=" + (trust != null));
+        return new MfaVerified(sessions.openWithoutMfa(user), trust);
     }
 
     @Override

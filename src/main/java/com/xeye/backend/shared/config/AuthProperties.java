@@ -20,6 +20,8 @@ public record AuthProperties(
         /** Emails que se promocionan a admin al iniciar sesión (bootstrap del primer admin). */
         @DefaultValue("") List<String> adminEmails,
         @DefaultValue("XEYE") String mfaIssuer,
+        /** Días que un dispositivo "recordado" tras el 2FA no vuelve a pedir el código (0 = siempre pedirlo). */
+        @DefaultValue("30") int mfaTrustDays,
         @DefaultValue RateLimit rateLimit,
         @DefaultValue Captcha captcha,
         @DefaultValue Password password,

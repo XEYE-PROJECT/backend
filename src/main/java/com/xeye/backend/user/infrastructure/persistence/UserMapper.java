@@ -25,6 +25,7 @@ final class UserMapper {
                 Permission.fromString(entity.getPermission()),
                 entity.isEmailVerified(),
                 entity.getLocale(),
+                entity.getSearchRateLimitPerMinute(),
                 entity.getTokenVersion(),
                 entity.getFailedLoginCount(),
                 entity.getLockedUntil(),
@@ -48,6 +49,7 @@ final class UserMapper {
         entity.setPermission(user.permission().value());
         entity.setEmailVerified(user.emailVerified());
         entity.setLocale(user.locale());
+        entity.setSearchRateLimitPerMinute(user.searchRateLimitPerMinute());
         entity.setTokenVersion(user.tokenVersion());
         entity.setFailedLoginCount(user.failedLoginCount());
         entity.setLockedUntil(user.lockedUntil());

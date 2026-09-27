@@ -39,6 +39,12 @@ public class LoggingSearchSyncNotifier implements SearchSyncNotifier {
     }
 
     @Override
+    public void userSearchLimitChanged(Long userId, Integer rateLimitPerMinute) {
+        log.info("[search:log] would notify user {} search limit = {}", userId,
+                rateLimitPerMinute == null ? "default" : rateLimitPerMinute);
+    }
+
+    @Override
     public void userDeleted(Long userId) {
         log.info("[search:log] would notify user {} deleted", userId);
     }

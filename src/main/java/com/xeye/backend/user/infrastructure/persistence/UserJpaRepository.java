@@ -3,6 +3,7 @@ package com.xeye.backend.user.infrastructure.persistence;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
 
+import java.util.List;
 import java.util.Optional;
 
 public interface UserJpaRepository extends JpaRepository<UserJpaEntity, Long> {
@@ -12,6 +13,9 @@ public interface UserJpaRepository extends JpaRepository<UserJpaEntity, Long> {
     Optional<UserJpaEntity> findBySsoProviderAndSsoSubject(String provider, String subject);
 
     boolean existsByEmail(String email);
+
+    /** Cuentas con un cupo de búsquedas distinto del por defecto (bootstrap del search-service). */
+    List<UserJpaEntity> findBySearchRateLimitPerMinuteIsNotNull();
 
     /** Solo la versión de tokens: lo consulta el filtro JWT en cada petición no cacheada. */
     @Query("select u.tokenVersion from UserJpaEntity u where u.id = :id")

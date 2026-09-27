@@ -19,5 +19,8 @@ public interface SearchSyncNotifier {
 
     void apiKeyDeleted(Long apiKeyId);
 
+    /** Cupo de búsquedas/minuto del usuario; {@code null} = volver al valor por defecto del buscador. */
+    void userSearchLimitChanged(Long userId, Integer rateLimitPerMinute);
+
     void userDeleted(Long userId);
 }

@@ -7,6 +7,7 @@ import com.xeye.backend.shared.event.ListDeletedEvent;
 import com.xeye.backend.shared.event.ListElementsChangedEvent;
 import com.xeye.backend.shared.event.ListMetaChangedEvent;
 import com.xeye.backend.shared.event.UserDeletedEvent;
+import com.xeye.backend.shared.event.UserSearchLimitChangedEvent;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.scheduling.annotation.Async;
@@ -61,6 +62,13 @@ public class SearchSyncEventListener {
     @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)
     public void onApiKeyDeleted(ApiKeyDeletedEvent event) {
         notify("api key deleted", () -> notifier.apiKeyDeleted(event.apiKeyId()));
+    }
+
+    @Async("searchSyncTaskExecutor")
+    @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)
+    public void onUserSearchLimitChanged(UserSearchLimitChangedEvent event) {
+        notify("user search limit changed", () ->
+                notifier.userSearchLimitChanged(event.userId(), event.rateLimitPerMinute()));
     }
 
     @Async("searchSyncTaskExecutor")

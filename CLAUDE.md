@@ -9,8 +9,9 @@ XEYE backend, **rebuilt in Java** (was FastAPI/Python at `../XEYE-backend`). It 
 (`user`, `apikey`, `list`, `element`, `training`, `search`) plus a `shared` module. Each module
 has its own `domain` → `application` → `infrastructure` layers (dependencies point inward only).
 The `search` module owns the integration with the rebuilt search microservice
-(`../search-service`): the `searches` log table, the `/internal/search/*` sync API, and the
-change notifications pushed to it (see "Search-service integration" below).
+(`../search-service`): the `searches` log table, the `/internal/search/*` sync API, the
+change notifications pushed to it and the console playground proxy (see "Search-service
+integration" below).
 
 Scope is deliberately smaller than the Python original (university project): no billing
 (`calls`/`endpoints`), no refresh tokens, no email verification.
@@ -89,7 +90,8 @@ Scope is deliberately smaller than the Python original (university project): no 
   search bootstrap/sync carry `keyHash`, never the key. Migration V6 hashed existing rows with
   `SHA2()` (identical output).
 - **Errors:** throw `shared.exception.*` (`NotFoundException`→404, `ConflictException`→409,
-  `BadRequestException`→400, `UnauthorizedException`→401, `ForbiddenException`→403).
+  `BadRequestException`→400, `UnauthorizedException`→401, `ForbiddenException`→403,
+  `TooManyRequestsException`→429 + Retry-After, `ServiceUnavailableException`→503).
   `GlobalExceptionHandler` maps them to `ApiError` JSON. Do not catch them in controllers.
 - **DB-managed timestamps:** JPA entities use `@Generated` + `insertable=false, updatable=false`
   on `created_at`/`updated_at`; the DB defaults / `ON UPDATE` manage them.
@@ -167,21 +169,36 @@ truth. Three pieces, all in the `search` module:
   `X-Internal-Token`, verified by `SharedSecretAuthenticationFilter`, same as the webhook; the
   production proxy does not expose it): `GET /internal/search/bootstrap`
   (api key **hashes** + all list metadata + the available embedding models, which search
-  pre-warms at startup), `GET /internal/search/lists/{listId}` (elements + the
+  pre-warms at startup, + `userLimits`: per-user search rate limits set by an admin),
+  `GET /internal/search/lists/{listId}` (elements + the
   in_use training's `embeddingsData`/`model` — the lazy-load counterpart of the index push),
   `POST /internal/search/logs` (batched search-log ingestion → `searches` table, migration V2).
+- **Console playground proxy** (`ConsoleSearchController`, `POST /lists/{listId}/search`, JWT):
+  the browser never holds an API key. `ConsoleSearchService` checks ownership, then the outbound
+  port `SearchQueryGateway` (`HttpSearchQueryGateway` → search's internal
+  `POST /v1/lists/{id}/search`; `UnavailableSearchQueryGateway` → 503 with provider `log`) runs
+  the query. Private lists are allowed here; the public search API (API keys) only serves public
+  lists and there is no client-side `allow_private` any more. Search's 404/429 map to
+  `NotFoundException`/`TooManyRequestsException` (Retry-After kept), anything else to
+  `ServiceUnavailableException` (503).
+- **Search rate limit is per user** (`users.search_rate_limit_per_minute`, migration V8, null =
+  search's default): all of a user's API keys and their console searches share the quota. Only
+  admins change it (`PUT /admin/users/{id}` with `searchRateLimitPerMinute`/`resetSearchRateLimit`),
+  which publishes `UserSearchLimitChangedEvent` → `PUT /v1/users/{id}/limits` on search.
 - **Change notifications** (`SearchSyncEventListener`, `@Async("searchSyncTaskExecutor")` +
   AFTER_COMMIT, best-effort — failures only mean brief staleness): `ListMetaChangedEvent`
   (rename/visibility), `ListDeletedEvent`, `ListElementsChangedEvent` (any element mutation,
   **including params-only edits**, → cache invalidation on the search side),
-  `ApiKeyCreatedEvent`/`ApiKeyDeletedEvent`, `UserDeletedEvent` — all in `shared/event`.
+  `ApiKeyCreatedEvent`/`ApiKeyDeletedEvent`, `UserDeletedEvent`, `UserSearchLimitChangedEvent` — all in
+  `shared/event`.
   Outbound port `SearchSyncNotifier`; impls `HttpSearchSyncNotifier` (provider `http`) /
   `LoggingSearchSyncNotifier` (provider `log`, default).
 - **Search logs**: domain `SearchLog`, in-port `SearchLogUseCases`, user endpoint
   `GET /lists/{listId}/searches` (owner-scoped, `?limit=` capped at 200).
 
 Cross-module reads use internal in-ports: `ApiKeyQueryPort.findAll`, `ListQueryPort.findAll`,
-`ElementQueryPort.findByListId`, `TrainingQueryPort.findInUseByListId`.
+`ElementQueryPort.findByListId`, `TrainingQueryPort.findInUseByListId`,
+`UserQueryPort.findSearchRateLimits`.
 
 ## Common commands
 
@@ -229,7 +246,7 @@ Authenticated (`Authorization: Bearer <jwt>`):
 `GET /admin/users`, `GET|PUT|DELETE /admin/users/{id}`, `POST /admin/users/{id}/logout-all` (admin) ·
 `GET|POST /api-keys`, `PUT|DELETE /api-keys/{id}` ·
 (`POST /api-keys` is the only response carrying the raw key) ·
-`GET|POST /lists`, `GET|PUT|DELETE /lists/{id}` ·
+`GET|POST /lists`, `GET|PUT|DELETE /lists/{id}`, `POST /lists/{listId}/search` (console playground) ·
 `GET|POST /lists/{listId}/elements`, `POST /lists/{listId}/elements/import`, `PUT|DELETE /elements/{id}` ·
 `GET /lists/{listId}/trainings`, `POST /lists/{listId}/trainings` (retrain), `GET /trainings/{id}`,
 `GET /trainings/pending`, `GET /trainings/embedding-models`, `POST /trainings/{id}/launch`,

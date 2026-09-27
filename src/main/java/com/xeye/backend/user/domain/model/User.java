@@ -18,6 +18,8 @@ public class User {
     public static final int LOCK_THRESHOLD = 5;
     /** Bloqueo máximo entre intentos (el bloqueo dobla en cada fallo: 1, 2, 4… minutos). */
     public static final int MAX_LOCK_MINUTES = 60;
+    /** Tope del límite de búsquedas/minuto que un admin puede fijar a una cuenta. */
+    public static final int MAX_SEARCH_RATE_LIMIT = 1_000_000;
 
     private final Long id;
     private String name;
@@ -27,6 +29,8 @@ public class User {
     private Permission permission;
     private boolean emailVerified;
     private String locale;
+    /** Búsquedas/minuto de la cuenta (todas sus API keys + consola); null = el por defecto del buscador. */
+    private Integer searchRateLimitPerMinute;
     private int tokenVersion;
     private int failedLoginCount;
     private Instant lockedUntil;
@@ -40,8 +44,8 @@ public class User {
     private final Instant updatedAt;
 
     public User(Long id, String name, String surname, String email, String password,
-                Permission permission, boolean emailVerified, String locale, int tokenVersion,
-                int failedLoginCount, Instant lockedUntil, Instant lastLoginAt,
+                Permission permission, boolean emailVerified, String locale, Integer searchRateLimitPerMinute,
+                int tokenVersion, int failedLoginCount, Instant lockedUntil, Instant lastLoginAt,
                 String totpSecret, boolean totpEnabled, List<String> recoveryCodeHashes,
                 String ssoProvider, String ssoSubject, Instant createdAt, Instant updatedAt) {
         this.id = id;
@@ -52,6 +56,7 @@ public class User {
         this.permission = permission == null ? Permission.USER : permission;
         this.emailVerified = emailVerified;
         this.locale = normalizeLocale(locale);
+        this.searchRateLimitPerMinute = normalizeSearchRateLimit(searchRateLimitPerMinute);
         this.tokenVersion = tokenVersion;
         this.failedLoginCount = failedLoginCount;
         this.lockedUntil = lockedUntil;
@@ -71,7 +76,7 @@ public class User {
     }
 
     public static User register(String name, String surname, String email, String hashedPassword, String locale) {
-        return new User(null, name, surname, email, hashedPassword, Permission.USER, false, locale, 0,
+        return new User(null, name, surname, email, hashedPassword, Permission.USER, false, locale, null, 0,
                 0, null, null, null, false, List.of(), null, null, null, null);
     }
 
@@ -81,7 +86,7 @@ public class User {
      */
     public static User fromSso(String name, String surname, String email, String unusablePasswordHash,
                                String locale, String provider, String subject) {
-        return new User(null, name, surname, email, unusablePasswordHash, Permission.USER, true, locale, 0,
+        return new User(null, name, surname, email, unusablePasswordHash, Permission.USER, true, locale, null, 0,
                 0, null, null, null, false, List.of(), provider, subject, null, null);
     }
 
@@ -115,6 +120,14 @@ public class User {
 
     public void markEmailVerified() {
         this.emailVerified = true;
+    }
+
+    /**
+     * Fija el cupo de búsquedas/minuto de la cuenta (lo decide un admin; {@code null} vuelve al
+     * valor por defecto del buscador). Todas las API keys del usuario lo comparten.
+     */
+    public void changeSearchRateLimit(Integer perMinute) {
+        this.searchRateLimitPerMinute = normalizeSearchRateLimit(perMinute);
     }
 
     /** Sube la versión de tokens: cualquier JWT emitido antes deja de ser válido. */
@@ -215,6 +228,16 @@ public class User {
         return locale != null && locale.trim().toLowerCase().startsWith("en") ? "en" : "es";
     }
 
+    private static Integer normalizeSearchRateLimit(Integer perMinute) {
+        if (perMinute == null) {
+            return null;
+        }
+        if (perMinute < 1 || perMinute > MAX_SEARCH_RATE_LIMIT) {
+            throw new IllegalArgumentException("searchRateLimitPerMinute must be between 1 and " + MAX_SEARCH_RATE_LIMIT);
+        }
+        return perMinute;
+    }
+
     public Long id() {
         return id;
     }
@@ -245,6 +268,11 @@ public class User {
 
     public String locale() {
         return locale;
+    }
+
+    /** Búsquedas/minuto fijadas por un admin, o {@code null} = el valor por defecto del buscador. */
+    public Integer searchRateLimitPerMinute() {
+        return searchRateLimitPerMinute;
     }
 
     public int tokenVersion() {

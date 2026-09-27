@@ -13,6 +13,7 @@ import com.xeye.backend.search.infrastructure.web.dto.ListSearchDataResponse;
 import com.xeye.backend.shared.exception.NotFoundException;
 import com.xeye.backend.training.application.port.in.TrainingQueryPort;
 import com.xeye.backend.training.domain.model.Training;
+import com.xeye.backend.user.application.port.in.UserQueryPort;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -37,23 +38,26 @@ public class InternalSearchController {
     private final ListQueryPort lists;
     private final ElementQueryPort elements;
     private final TrainingQueryPort trainings;
+    private final UserQueryPort users;
     private final SearchLogUseCases searchLogs;
     private final ObjectMapper objectMapper;
 
     public InternalSearchController(ApiKeyQueryPort apiKeys, ListQueryPort lists, ElementQueryPort elements,
-                                    TrainingQueryPort trainings, SearchLogUseCases searchLogs,
+                                    TrainingQueryPort trainings, UserQueryPort users, SearchLogUseCases searchLogs,
                                     ObjectMapper objectMapper) {
         this.apiKeys = apiKeys;
         this.lists = lists;
         this.elements = elements;
         this.trainings = trainings;
+        this.users = users;
         this.searchLogs = searchLogs;
         this.objectMapper = objectMapper;
     }
 
     /**
      * Snapshot completo de arranque: hashes SHA-256 de las api keys + metadatos de listas (sin
-     * elementos ni embeddings). Nunca viaja una key en claro: búsqueda hashea la cabecera recibida.
+     * elementos ni embeddings) + cupos de búsqueda por usuario. Nunca viaja una key en claro:
+     * búsqueda hashea la cabecera recibida.
      */
     @GetMapping("/bootstrap")
     public BootstrapResponse bootstrap() {
@@ -63,7 +67,10 @@ public class InternalSearchController {
         List<BootstrapResponse.ListEntry> allLists = lists.findAll().stream()
                 .map(list -> new BootstrapResponse.ListEntry(list.id(), list.userId(), list.name(), list.isPublic()))
                 .toList();
-        return new BootstrapResponse(keys, allLists, trainings.availableEmbeddingModels());
+        List<BootstrapResponse.UserLimitEntry> limits = users.findSearchRateLimits().stream()
+                .map(limit -> new BootstrapResponse.UserLimitEntry(limit.userId(), limit.rateLimitPerMinute()))
+                .toList();
+        return new BootstrapResponse(keys, allLists, trainings.availableEmbeddingModels(), limits);
     }
 
     /** Datos de búsqueda completos de una lista — la carga perezosa equivalente al push al completar un training. */

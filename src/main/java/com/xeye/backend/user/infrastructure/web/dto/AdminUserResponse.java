@@ -13,6 +13,8 @@ public record AdminUserResponse(
         boolean emailVerified,
         boolean mfaEnabled,
         String ssoProvider,
+        /** Búsquedas/minuto fijadas por un admin; null = el valor por defecto del buscador. */
+        Integer searchRateLimitPerMinute,
         int failedLoginCount,
         Instant lockedUntil,
         Instant lastLoginAt,
@@ -20,7 +22,8 @@ public record AdminUserResponse(
 
     public static AdminUserResponse from(User user) {
         return new AdminUserResponse(user.id(), user.name(), user.surname(), user.email(), user.permission().value(),
-                user.emailVerified(), user.totpEnabled(), user.ssoProvider(), user.failedLoginCount(),
+                user.emailVerified(), user.totpEnabled(), user.ssoProvider(), user.searchRateLimitPerMinute(),
+                user.failedLoginCount(),
                 user.lockedUntil(), user.lastLoginAt(), user.createdAt());
     }
 }

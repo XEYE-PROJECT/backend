@@ -41,6 +41,10 @@ public class UserJpaEntity {
     @Column(nullable = false, length = 5)
     private String locale;
 
+    /** Búsquedas/minuto de la cuenta (migración V8); null = el valor por defecto del search-service. */
+    @Column(name = "search_rate_limit_per_minute")
+    private Integer searchRateLimitPerMinute;
+
     @Column(name = "token_version", nullable = false)
     private int tokenVersion;
 
@@ -142,6 +146,14 @@ public class UserJpaEntity {
 
     public void setLocale(String locale) {
         this.locale = locale;
+    }
+
+    public Integer getSearchRateLimitPerMinute() {
+        return searchRateLimitPerMinute;
+    }
+
+    public void setSearchRateLimitPerMinute(Integer searchRateLimitPerMinute) {
+        this.searchRateLimitPerMinute = searchRateLimitPerMinute;
     }
 
     public int getTokenVersion() {

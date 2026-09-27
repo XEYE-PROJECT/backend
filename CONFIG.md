@@ -90,6 +90,12 @@ Guard = lo comprueba `ProductionConfigGuard` al arrancar con el perfil `prod`.
 | `SEARCH_SERVICE_URL` | URL del search-service por la red docker (`http://search-service:8002`) | `http://localhost:8002` | **sí** | sin localhost |
 | `SEARCH_INTERNAL_TOKEN` 🔑 | Secreto compartido `X-Internal-Token` (= `INTERNAL_TOKEN` en search) | `dev-internal-token` | **sí** | ≥ 32 chars, no dev |
 
+El mismo `SEARCH_SERVICE_URL`/`SEARCH_INTERNAL_TOKEN` sirve para el push del índice, las
+notificaciones de cambio y el **playground de la consola** (`POST /lists/{id}/search`, que el
+backend reenvía a `POST {SEARCH_SERVICE_URL}/v1/lists/{id}/search`). Con `SEARCH_PROVIDER=log` el
+playground responde 503. El cupo de búsquedas por usuario no se configura aquí: el valor por
+defecto es `RATE_LIMIT_PER_MINUTE` del search-service y un admin lo cambia por cuenta desde la consola.
+
 ## Observabilidad
 
 | Variable | Descripción | Default dev | Prod | Guard |

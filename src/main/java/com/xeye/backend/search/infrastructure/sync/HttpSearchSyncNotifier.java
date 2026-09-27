@@ -97,6 +97,18 @@ public class HttpSearchSyncNotifier implements SearchSyncNotifier {
     }
 
     @Override
+    public void userSearchLimitChanged(Long userId, Integer rateLimitPerMinute) {
+        http.put()
+                .uri("/v1/users/{userId}/limits", userId)
+                .headers(this::internalHeaders)
+                .contentType(MediaType.APPLICATION_JSON)
+                .body(new UserLimitsPayload(rateLimitPerMinute))
+                .retrieve()
+                .toBodilessEntity();
+        log.debug("Notified search: user {} search limit changed to {}", userId, rateLimitPerMinute);
+    }
+
+    @Override
     public void userDeleted(Long userId) {
         http.delete()
                 .uri("/v1/users/{userId}", userId)
@@ -116,5 +128,9 @@ public class HttpSearchSyncNotifier implements SearchSyncNotifier {
 
     /** Solo el hash SHA-256: el search-service nunca recibe claves en claro. */
     record ApiKeyPayload(Long userId, String keyHash) {
+    }
+
+    /** {@code null} se serializa explícitamente (Jackson incluye nulls): "vuelve al por defecto". */
+    record UserLimitsPayload(Integer rateLimitPerMinute) {
     }
 }

@@ -53,7 +53,8 @@ public class AdminUserController {
                                     @Valid @RequestBody AdminUpdateUserRequest request) {
         return AdminUserResponse.from(admin.update(current.id(), id, new AdminUpdateUserCommand(
                 request.permission() == null ? null : Permission.fromString(request.permission()),
-                request.emailVerified(), request.unlock())));
+                request.emailVerified(), request.unlock(),
+                request.searchRateLimitPerMinute(), request.resetSearchRateLimit())));
     }
 
     @DeleteMapping("/{id}")

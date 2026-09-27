@@ -1,12 +1,14 @@
 package com.xeye.backend.user.application.service;
 
 import com.xeye.backend.shared.event.UserDeletedEvent;
+import com.xeye.backend.shared.event.UserSearchLimitChangedEvent;
 import com.xeye.backend.shared.exception.BadRequestException;
 import com.xeye.backend.shared.exception.NotFoundException;
 import com.xeye.backend.shared.security.AuthAuditLog;
 import com.xeye.backend.user.application.command.AdminUpdateUserCommand;
 import com.xeye.backend.user.application.command.UserPage;
 import com.xeye.backend.user.application.port.in.AdminUserUseCases;
+import com.xeye.backend.user.application.port.in.UserQueryPort;
 import com.xeye.backend.user.application.port.out.SessionRevoker;
 import com.xeye.backend.user.application.port.out.UserRepository;
 import com.xeye.backend.user.domain.model.Permission;
@@ -15,9 +17,12 @@ import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.util.List;
+import java.util.Objects;
+
 /** Administración de cuentas. La autorización (ROLE_ADMIN) la aplica el controlador con {@code @PreAuthorize}. */
 @Service
-public class AdminUserService implements AdminUserUseCases {
+public class AdminUserService implements AdminUserUseCases, UserQueryPort {
 
     private final UserRepository users;
     private final SessionRevoker sessionRevoker;
@@ -61,9 +66,30 @@ public class AdminUserService implements AdminUserUseCases {
         if (Boolean.TRUE.equals(command.unlock())) {
             user.unlock();
         }
+        Integer previousLimit = user.searchRateLimitPerMinute();
+        if (Boolean.TRUE.equals(command.resetSearchRateLimit())) {
+            user.changeSearchRateLimit(null);
+        } else if (command.searchRateLimitPerMinute() != null) {
+            user.changeSearchRateLimit(command.searchRateLimitPerMinute());
+        }
         User saved = users.save(user);
-        AuthAuditLog.info("admin_user_updated", "-", user.email(), "actorId=" + actorId + " userId=" + userId);
+        if (!Objects.equals(previousLimit, saved.searchRateLimitPerMinute())) {
+            // El buscador aplica el cupo: se lo comunicamos tras el commit (best-effort, el
+            // bootstrap periódico lo cura si el aviso se pierde).
+            events.publishEvent(new UserSearchLimitChangedEvent(userId, saved.searchRateLimitPerMinute()));
+        }
+        AuthAuditLog.info("admin_user_updated", "-", user.email(), "actorId=" + actorId + " userId=" + userId
+                + (Objects.equals(previousLimit, saved.searchRateLimitPerMinute()) ? ""
+                : " searchRateLimitPerMinute=" + saved.searchRateLimitPerMinute()));
         return saved;
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public List<UserSearchLimit> findSearchRateLimits() {
+        return users.findWithSearchRateLimit().stream()
+                .map(user -> new UserSearchLimit(user.id(), user.searchRateLimitPerMinute()))
+                .toList();
     }
 
     @Override

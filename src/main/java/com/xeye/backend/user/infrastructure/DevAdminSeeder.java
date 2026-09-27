@@ -40,7 +40,7 @@ public class DevAdminSeeder implements CommandLineRunner {
             return;
         }
         users.save(new User(null, "Admin", "XEYE", email, passwordHasher.hash(password), Permission.ADMIN,
-                true, "es", 0, 0, null, null, null, false, List.of(), null, null, null, null));
+                true, "es", null, 0, 0, null, null, null, false, List.of(), null, null, null, null));
         // La contraseña nunca va al log (aunque sea dev): está en xeye.dev.admin-password / README.
         log.info("Seeded dev admin user '{}'", email);
     }

@@ -120,12 +120,18 @@ GET|PUT|DELETE /users/me          (PUT: name, surname, locale)
 PUT /users/me/email               {email, currentPassword}: enlace al nuevo buzón; se aplica al confirmar
 PUT /users/me/password            {currentPassword, newPassword} -> token nuevo (los demás se cierran)
 POST /users/me/mfa/setup|enable|disable
-GET /admin/users, GET|PUT|DELETE /admin/users/{id}, POST /admin/users/{id}/logout-all   (ROLE_ADMIN)
+GET /admin/users, GET|PUT|DELETE /admin/users/{id}, POST /admin/users/{id}/logout-all   (ROLE_ADMIN;
+                                  PUT admite searchRateLimitPerMinute / resetSearchRateLimit: cupo de
+                                  búsquedas/min de la cuenta, compartido por todas sus API keys)
 GET|POST /api-keys        PUT|DELETE /api-keys/{id}   (POST es la ÚNICA respuesta con la clave completa;
                                                       después solo existe su hash y se muestra el prefijo)
 GET|POST /lists           GET|PUT|DELETE /lists/{id}
+POST /lists/{listId}/search          playground de la consola: {searchTerm, limit?, includeScoreBreakdown?}
+                                     -> el backend reenvía al buscador por la red interna (también
+                                     listas privadas; la API key nunca pasa por el navegador)
 GET|POST /lists/{listId}/elements    PUT|DELETE /elements/{id}
 GET /lists/{listId}/trainings        GET /trainings/{id}
+GET /lists/{listId}/searches         historial de búsquedas por API key
 ```
 
 Ejemplo:

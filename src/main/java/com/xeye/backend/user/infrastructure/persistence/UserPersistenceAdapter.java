@@ -51,6 +51,11 @@ public class UserPersistenceAdapter implements UserRepository {
     }
 
     @Override
+    public List<User> findWithSearchRateLimit() {
+        return jpa.findBySearchRateLimitPerMinuteIsNotNull().stream().map(UserMapper::toDomain).toList();
+    }
+
+    @Override
     public User save(User user) {
         return UserMapper.toDomain(jpa.save(UserMapper.toEntity(user)));
     }

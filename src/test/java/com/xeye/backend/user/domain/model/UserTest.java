@@ -89,4 +89,23 @@ class UserTest {
         assertFalse(user.totpEnabled());
         assertEquals(List.of(), user.recoveryCodeHashes());
     }
+
+    @Test
+    void searchRateLimitIsNullByDefaultAndAdminCanSetOrReset() {
+        User user = User.register("Joan", "Martorell", "j@e.com", "hash");
+        assertEquals(null, user.searchRateLimitPerMinute());
+        user.changeSearchRateLimit(120);
+        assertEquals(120, user.searchRateLimitPerMinute());
+        user.changeSearchRateLimit(null);
+        assertEquals(null, user.searchRateLimitPerMinute());
+    }
+
+    @Test
+    void searchRateLimitMustBePositiveAndBounded() {
+        User user = User.register("Joan", "Martorell", "j@e.com", "hash");
+        assertThrows(IllegalArgumentException.class, () -> user.changeSearchRateLimit(0));
+        assertThrows(IllegalArgumentException.class, () -> user.changeSearchRateLimit(-5));
+        assertThrows(IllegalArgumentException.class,
+                () -> user.changeSearchRateLimit(User.MAX_SEARCH_RATE_LIMIT + 1));
+    }
 }

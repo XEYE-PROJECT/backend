@@ -5,6 +5,7 @@ import com.xeye.backend.shared.exception.ConflictException;
 import com.xeye.backend.shared.exception.DomainException;
 import com.xeye.backend.shared.exception.ForbiddenException;
 import com.xeye.backend.shared.exception.NotFoundException;
+import com.xeye.backend.shared.exception.ServiceUnavailableException;
 import com.xeye.backend.shared.exception.TooManyRequestsException;
 import com.xeye.backend.shared.exception.UnauthorizedException;
 import org.slf4j.Logger;
@@ -60,6 +61,13 @@ public class GlobalExceptionHandler {
         return ResponseEntity.status(HttpStatus.FORBIDDEN)
                 .body(ApiError.of(HttpStatus.FORBIDDEN.value(), HttpStatus.FORBIDDEN.getReasonPhrase(),
                         "Insufficient permissions", "FORBIDDEN"));
+    }
+
+    /** Dependencia externa caída o no configurada (p. ej. el search-service para el playground). */
+    @ExceptionHandler(ServiceUnavailableException.class)
+    public ResponseEntity<ApiError> handleServiceUnavailable(ServiceUnavailableException ex) {
+        log.warn("Service unavailable: {}", ex.getMessage());
+        return build(HttpStatus.SERVICE_UNAVAILABLE, ex);
     }
 
     @ExceptionHandler(TooManyRequestsException.class)

@@ -3,7 +3,7 @@
 # sobreescribir cualquiera. NUNCA se activa en producción (la imagen fija prod).
 spring:
   datasource:
-    url: ${DB_URL:jdbc:mysql://localhost:3306/xeye?allowPublicKeyRetrieval=true&useSSL=false&serverTimezone=UTC&createDatabaseIfNotExist=true}
+    url: ${DB_URL:jdbc:mysql://localhost:3307/xeye?allowPublicKeyRetrieval=true&useSSL=false&serverTimezone=UTC&createDatabaseIfNotExist=true}
     username: ${DB_USERNAME:xeye}
     password: ${DB_PASSWORD:xeye}
   jpa:

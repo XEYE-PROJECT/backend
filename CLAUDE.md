@@ -192,7 +192,7 @@ docker compose -f docker-compose.dev.yml up --build
 docker compose -f docker-compose.dev.yml exec backend mvn -o compile
 
 # Or run the app on the host against a dockerised DB (best IDE hot-reload):
-mvn spring-boot:run      # activates profile 'dev' (pom); DB_URL/DB_USERNAME/DB_PASSWORD override the localhost defaults
+mvn spring-boot:run      # activates profile 'dev' (pom); defaults to the compose DB on localhost:3307 (DB_URL/DB_USERNAME/DB_PASSWORD override)
 
 mvn -q compile           # compile only
 mvn test                 # pure domain unit tests (no DB needed)

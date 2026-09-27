@@ -25,7 +25,8 @@ class ProductionConfigGuardTest {
                 .withProperty("xeye.training.callback-base-url", "https://backend.xeye.es")
                 .withProperty("xeye.auth.frontend-url", "https://xeye.es")
                 .withProperty("xeye.email.provider", "resend")
-                .withProperty("xeye.email.resend-api-key", "re_test_key");
+                .withProperty("xeye.email.resend-api-key", "re_test_key")
+                .withProperty("xeye.search.url", "http://search-service:8002");
     }
 
     @Test
@@ -106,5 +107,26 @@ class ProductionConfigGuardTest {
         assertTrue(problems.stream().anyMatch(p -> p.startsWith("SEARCH_PROVIDER must be 'http'")));
         assertTrue(problems.stream().anyMatch(p -> p.contains("http://localhost:3000")));
         assertTrue(problems.stream().anyMatch(p -> p.startsWith("BACKEND_URL must be the public https://")));
+    }
+
+    @Test
+    void localhostIsRejectedEvenOverHttps() {
+        List<String> problems = ProductionConfigGuard.check(validEnvironment()
+                .withProperty("xeye.cors.allowed-origins", "https://xeye.es,https://localhost:3000")
+                .withProperty("xeye.auth.frontend-url", "https://127.0.0.1")
+                .withProperty("xeye.training.callback-base-url", "https://user@localhost:8443/x")
+                .withProperty("xeye.search.url", "http://localhost:8002"));
+        assertEquals(4, problems.size(), String.join("\n", problems));
+        assertTrue(problems.stream().anyMatch(p -> p.startsWith("CORS_ORIGINS must not contain localhost")));
+        assertTrue(problems.stream().anyMatch(p -> p.startsWith("FRONTEND_URL")));
+        assertTrue(problems.stream().anyMatch(p -> p.startsWith("BACKEND_URL")));
+        assertTrue(problems.stream().anyMatch(p -> p.startsWith("SEARCH_SERVICE_URL")));
+
+        assertTrue(ProductionConfigGuard.isLocalHost("http://[::1]:8002"));
+        assertTrue(ProductionConfigGuard.isLocalHost("https://app.localhost"));
+        assertTrue(ProductionConfigGuard.isLocalHost("0.0.0.0:8000"));
+        assertTrue(!ProductionConfigGuard.isLocalHost("http://search-service:8002"));
+        assertTrue(!ProductionConfigGuard.isLocalHost("https://xeye.es/localhost"));
+        assertTrue(!ProductionConfigGuard.isLocalHost("https://localhost.xeye.es"));
     }
 }

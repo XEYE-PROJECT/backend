@@ -86,21 +86,36 @@ public class ProductionConfigGuard {
         }
 
         String origins = env.getProperty("xeye.cors.allowed-origins", "");
+        if (origins.isBlank()) {
+            problems.add("CORS_ORIGINS must list the console origins (https://xeye.es,...)");
+        }
         for (String origin : origins.split(",")) {
             String trimmed = origin.trim();
-            if (!trimmed.isEmpty() && !trimmed.startsWith("https://")) {
+            if (trimmed.isEmpty()) {
+                continue;
+            }
+            if (!trimmed.startsWith("https://")) {
                 problems.add("CORS_ORIGINS must contain only https:// origins (found '" + trimmed + "')");
+            } else if (isLocalHost(trimmed)) {
+                problems.add("CORS_ORIGINS must not contain localhost origins in production (found '" + trimmed + "')");
             }
         }
 
         String callbackBase = env.getProperty("xeye.training.callback-base-url", "");
-        if (!callbackBase.startsWith("https://")) {
+        if (!callbackBase.startsWith("https://") || isLocalHost(callbackBase)) {
             problems.add("BACKEND_URL must be the public https:// URL of this backend (found '" + callbackBase + "')");
         }
 
         String frontendUrl = env.getProperty("xeye.auth.frontend-url", "");
-        if (!frontendUrl.startsWith("https://")) {
+        if (!frontendUrl.startsWith("https://") || isLocalHost(frontendUrl)) {
             problems.add("FRONTEND_URL must be the public https:// URL of the console (found '" + frontendUrl + "')");
+        }
+
+        // Dentro de un contenedor, localhost es el propio contenedor: el search-service nunca está ahí.
+        String searchUrl = env.getProperty("xeye.search.url", "");
+        if (searchUrl.isBlank() || isLocalHost(searchUrl)) {
+            problems.add("SEARCH_SERVICE_URL must point to the search-service over the docker network "
+                    + "(http://search-service:8002), not localhost (found '" + searchUrl + "')");
         }
         String emailProvider = env.getProperty("xeye.email.provider", "");
         boolean verification = env.getProperty("xeye.auth.require-email-verification", Boolean.class, true);
@@ -133,5 +148,37 @@ public class ProductionConfigGuard {
 
     private static boolean isInsecure(String value) {
         return KNOWN_INSECURE_VALUES.contains(value.trim().toLowerCase(Locale.ROOT));
+    }
+
+    /** {@code localhost}, {@code 127.0.0.1}, {@code 0.0.0.0} o {@code [::1]} como host de una URL u origen. */
+    static boolean isLocalHost(String url) {
+        String rest = url.trim().toLowerCase(Locale.ROOT);
+        int scheme = rest.indexOf("://");
+        if (scheme >= 0) {
+            rest = rest.substring(scheme + 3);
+        }
+        int end = rest.length();
+        for (char stop : new char[] {'/', '?', '#'}) {
+            int i = rest.indexOf(stop);
+            if (i >= 0 && i < end) {
+                end = i;
+            }
+        }
+        String host = rest.substring(0, end);
+        int at = host.lastIndexOf('@');
+        if (at >= 0) {
+            host = host.substring(at + 1);
+        }
+        if (host.startsWith("[")) {
+            int close = host.indexOf(']');
+            host = close > 0 ? host.substring(1, close) : host;
+        } else {
+            int colon = host.indexOf(':');
+            if (colon >= 0) {
+                host = host.substring(0, colon);
+            }
+        }
+        return host.equals("localhost") || host.endsWith(".localhost")
+                || host.equals("127.0.0.1") || host.equals("0.0.0.0") || host.equals("::1");
     }
 }

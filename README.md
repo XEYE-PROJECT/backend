@@ -65,7 +65,8 @@ sin `https://`). El error nombra la variable de entorno.
 
 ## Variables de entorno
 
-Ver [.env.example](.env.example). Las principales:
+Referencia completa (todas las variables, con lo **obligatorio en producción** y lo que comprueba
+`ProductionConfigGuard`): [CONFIG.md](CONFIG.md). Plantilla: [.env.example](.env.example). Las principales:
 
 | Variable | Descripción |
 |---|---|

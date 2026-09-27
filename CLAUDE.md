@@ -204,6 +204,9 @@ Hot reload: DevTools watches `target/classes`. Saving a file in an IDE that auto
 
 ## Configuration (`application.yml`, all overridable by env var)
 
+**Full reference with the "required in prod" column: `CONFIG.md`** (keep it in sync when adding a knob).
+`ProductionConfigGuard` also rejects `localhost` anywhere in `CORS_ORIGINS`/`FRONTEND_URL`/`BACKEND_URL`/`SEARCH_SERVICE_URL`.
+
 `xeye.jwt.{secret,expiration-minutes,issuer}`, `xeye.cors.allowed-origins`,
 `xeye.training.{provider,webhook-secret,callback-base-url,mock-delay-ms,embedding-models,stalled-after-minutes,max-concurrent,docker.*,runpod.*}`,
 `xeye.search.{provider,url,internal-service-name,internal-token}` (`SearchProperties` lives in
@@ -239,7 +242,7 @@ Authenticated (`Authorization: Bearer <jwt>`):
 | New endpoint | controller in the module's `infrastructure/web` + method on its `*UseCases` in-port + service |
 | New table/column | Flyway migration `V__*.sql` + JPA entity + domain model + mapper + repo port/adapter |
 | New exception→HTTP code | `shared/web/GlobalExceptionHandler` + `shared/exception` |
-| New config knob | a `@ConfigurationProperties` record (auto-scanned) + `application.yml` |
+| New config knob | a `@ConfigurationProperties` record (auto-scanned) + `application.yml` + row in `CONFIG.md` (+ `.env.example`) |
 | Swap an integration | implement the outbound port (`TrainingLauncher`/`SearchIndexer`) + `@ConditionalOnProperty` |
 
 ## Sibling services (in the parent `XEYE/` workspace)

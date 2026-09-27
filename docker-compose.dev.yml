@@ -72,6 +72,14 @@ services:
       # Cuentas: enlaces de los emails apuntan a la consola local; los emails salen por el log.
       FRONTEND_URL: ${FRONTEND_URL:-http://localhost:3000}
       EMAIL_PROVIDER: ${EMAIL_PROVIDER:-log}
+      EMAIL_FROM: ${EMAIL_FROM:-XEYE <noreply@xeye.es>}
+      EMAIL_REPLY_TO: ${EMAIL_REPLY_TO:-info@xeye.es}
+      # Solo con EMAIL_PROVIDER=smtp (buzón IONOS) o resend.
+      SMTP_HOST: ${SMTP_HOST:-smtp.ionos.es}
+      SMTP_PORT: ${SMTP_PORT:-587}
+      SMTP_USERNAME: ${SMTP_USERNAME:-}
+      SMTP_PASSWORD: ${SMTP_PASSWORD:-}
+      RESEND_API_KEY: ${RESEND_API_KEY:-}
       AUTH_REQUIRE_EMAIL_VERIFICATION: ${AUTH_REQUIRE_EMAIL_VERIFICATION:-true}
       PASSWORD_BREACH_CHECK: ${PASSWORD_BREACH_CHECK:-none}
       ADMIN_EMAILS: ${ADMIN_EMAILS:-}

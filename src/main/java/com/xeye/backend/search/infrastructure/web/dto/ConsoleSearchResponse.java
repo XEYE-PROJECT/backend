@@ -5,9 +5,12 @@ import com.xeye.backend.search.application.port.out.SearchQueryGateway.SearchQue
 
 import java.util.List;
 
-/** Resultado del playground, en camelCase como el resto del backend (el buscador habla snake_case). */
+/**
+ * Resultado del playground, en camelCase como el resto del backend (el buscador habla snake_case).
+ * {@code degraded}/{@code degradationReasons} se copian tal cual del buscador.
+ */
 public record ConsoleSearchResponse(List<Result> results, int totalResults, String searchTerm, String listName,
-                                    int durationMs) {
+                                    int durationMs, boolean degraded, List<String> degradationReasons) {
 
     @JsonInclude(JsonInclude.Include.NON_NULL)
     public record Result(String item, double score, Object params, Double textScore, Double semanticScore) {
@@ -18,6 +21,7 @@ public record ConsoleSearchResponse(List<Result> results, int totalResults, Stri
                 .map(h -> new Result(h.item(), h.score(), h.params(), h.textScore(), h.semanticScore()))
                 .toList();
         return new ConsoleSearchResponse(results, result.totalResults(), result.searchTerm(), result.listName(),
-                result.durationMs());
+                result.durationMs(), result.degraded(),
+                result.degradationReasons() == null ? List.of() : result.degradationReasons());
     }
 }

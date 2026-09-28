@@ -128,7 +128,8 @@ GET|POST /api-keys        PUT|DELETE /api-keys/{id}   (POST es la ÚNICA respues
 GET|POST /lists           GET|PUT|DELETE /lists/{id}   (GET /lists admite ?q= y ?public=; cada lista trae elementCount)
 POST /lists/{listId}/search          playground de la consola: {searchTerm, limit?, includeScoreBreakdown?}
                                      -> el backend reenvía al buscador por la red interna (también
-                                     listas privadas; la API key nunca pasa por el navegador)
+                                     listas privadas; la API key nunca pasa por el navegador); la
+                                     respuesta trae degraded/degradationReasons tal como los da el buscador
 GET|POST /lists/{listId}/elements    PUT|DELETE /elements/{id}   (GET admite ?q=; POST …/elements/import por lotes)
 GET /lists/{listId}/trainings        GET /trainings/{id}, POST /lists/{listId}/trainings (encola), /trainings/{id}/launch|use
 GET /lists/{listId}/searches         historial de búsquedas por API key

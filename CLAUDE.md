@@ -232,7 +232,8 @@ truth. Three pieces, all in the `search` module:
   the query. Private lists are allowed here; the public search API (API keys) only serves public
   lists and there is no client-side `allow_private` any more. Search's 404/429 map to
   `NotFoundException`/`TooManyRequestsException` (Retry-After kept), anything else to
-  `ServiceUnavailableException` (503).
+  `ServiceUnavailableException` (503). Search's `degraded`/`degradation_reasons` are passed
+  through unchanged (`ConsoleSearchResponse.degraded`); the console shows them as a warning.
 - **Search rate limit is per user** (`users.search_rate_limit_per_minute`, migration V8, null =
   search's default): all of a user's API keys and their console searches share the quota. Only
   admins change it (`PUT /admin/users/{id}` with `searchRateLimitPerMinute`/`resetSearchRateLimit`),

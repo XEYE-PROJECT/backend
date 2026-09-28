@@ -80,7 +80,9 @@ public class HttpSearchQueryGateway implements SearchQueryGateway {
         List<Hit> hits = body.results() == null ? List.of() : body.results().stream()
                 .map(r -> new Hit(r.item(), r.score(), r.params(), r.textScore(), r.semanticScore()))
                 .toList();
-        return new SearchQueryResult(hits, body.totalResults(), body.searchTerm(), body.listName(), body.durationMs());
+        List<String> reasons = body.degradationReasons() == null ? List.of() : body.degradationReasons();
+        return new SearchQueryResult(hits, body.totalResults(), body.searchTerm(), body.listName(), body.durationMs(),
+                Boolean.TRUE.equals(body.degraded()), reasons);
     }
 
     private RuntimeException translate(RestClientResponseException ex, Long listId) {
@@ -115,7 +117,9 @@ public class HttpSearchQueryGateway implements SearchQueryGateway {
                       @JsonProperty("total_results") int totalResults,
                       @JsonProperty("search_term") String searchTerm,
                       @JsonProperty("list_name") String listName,
-                      @JsonProperty("duration_ms") int durationMs) {
+                      @JsonProperty("duration_ms") int durationMs,
+                      Boolean degraded,
+                      @JsonProperty("degradation_reasons") List<String> degradationReasons) {
     }
 
     record ResultItem(String item, double score, Object params,

@@ -3,6 +3,7 @@ package com.xeye.backend.training.application.port.out;
 import com.xeye.backend.shared.paging.Page;
 import com.xeye.backend.shared.paging.Paging;
 import com.xeye.backend.training.domain.model.Training;
+import com.xeye.backend.training.domain.model.TrainingStatus;
 
 import java.time.Instant;
 import java.util.List;
@@ -35,6 +36,9 @@ public interface TrainingRepository {
 
     /** Runs lanzados en todo el backend (ocupan hueco del cupo global). */
     long countLaunched();
+
+    /** Runs en un estado concreto (gauges de la cola: queued, pending). */
+    long countByStatus(TrainingStatus status);
 
     /** Runs lanzados por usuario (para la equidad de la cola). */
     Map<Long, Long> countLaunchedByUser();

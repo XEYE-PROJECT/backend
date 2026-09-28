@@ -3,6 +3,7 @@ package com.xeye.backend.training.infrastructure.web;
 import com.xeye.backend.training.application.TrainingDispatcher;
 import com.xeye.backend.training.application.command.TrainingUpdateCommand;
 import com.xeye.backend.training.application.port.in.TrainingCompletionHandler;
+import com.xeye.backend.training.application.port.out.TrainingMetrics;
 import com.xeye.backend.training.infrastructure.web.dto.TrainingWebhookRequest;
 import com.xeye.backend.training.infrastructure.web.dto.WebhookAck;
 import jakarta.validation.Valid;
@@ -33,10 +34,13 @@ public class TrainingWebhookController {
 
     private final TrainingCompletionHandler completionHandler;
     private final TrainingDispatcher dispatcher;
+    private final TrainingMetrics metrics;
 
-    public TrainingWebhookController(TrainingCompletionHandler completionHandler, TrainingDispatcher dispatcher) {
+    public TrainingWebhookController(TrainingCompletionHandler completionHandler, TrainingDispatcher dispatcher,
+                                     TrainingMetrics metrics) {
         this.completionHandler = completionHandler;
         this.dispatcher = dispatcher;
+        this.metrics = metrics;
     }
 
     @PostMapping("/training-update")
@@ -45,6 +49,8 @@ public class TrainingWebhookController {
         boolean applied = applyWithRetry(command);
         String status = command.status().trim().toLowerCase(Locale.ROOT);
         if (applied && ("completed".equals(status) || "failed".equals(status))) {
+            metrics.recordOutcome("completed".equals(status)
+                    ? TrainingMetrics.OUTCOME_COMPLETED : TrainingMetrics.OUTCOME_FAILED);
             // Un run terminó: hay hueco en la cola.
             dispatcher.dispatch();
         }

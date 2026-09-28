@@ -1,8 +1,10 @@
 package com.xeye.backend.shared.outbox;
 
+import com.xeye.backend.shared.web.RequestId;
 import jakarta.annotation.PreDestroy;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.slf4j.MDC;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 
@@ -102,6 +104,17 @@ public class OutboxRelay {
     }
 
     private void deliver(OutboxEvent event) {
+        // Correlación: los logs (y la cabecera X-Request-Id hacia el buscador) de esta entrega
+        // llevan el id del evento, ya que aquí no hay petición HTTP entrante.
+        MDC.put(RequestId.MDC_KEY, "outbox-" + event.id());
+        try {
+            deliverEvent(event);
+        } finally {
+            MDC.remove(RequestId.MDC_KEY);
+        }
+    }
+
+    private void deliverEvent(OutboxEvent event) {
         OutboxHandler handler = handlers.get(event.type());
         if (handler == null) {
             log.error("No outbox handler for event type {} (id {}); marking failed", event.type(), event.id());

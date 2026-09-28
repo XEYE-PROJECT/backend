@@ -77,7 +77,8 @@ Guard = lo comprueba `ProductionConfigGuard` al arrancar con el perfil `prod`.
 |---|---|---|---|---|
 | `TRAINING_PROVIDER` | `mock` (solo dev), `docker` o `runpod` | `mock` | **docker** o **runpod** | `mock` prohibido |
 | `TRAINING_WEBHOOK_SECRET` 🔑 | `X-Webhook-Token` del callback; el worker lo recibe por su entorno (`WEBHOOK_SECRET`) | `dev-webhook-secret` | **sí** | ≥ 32 chars, no dev |
-| `BACKEND_URL` | URL pública de este backend a la que el worker llama de vuelta | `http://localhost:8000` | **sí** | `https://`, sin localhost |
+| `BACKEND_URL` | URL pública de este backend (redirect del SSO y, por defecto, callback del worker) | `http://localhost:8000` | **sí** | `https://`, sin localhost |
+| `TRAINING_CALLBACK_BASE_URL` | Host aparte para el callback del worker (`…/webhooks/training-update`) cuando `BACKEND_URL` pasa por el WAF/CDN (tope de body 100 MB en Cloudflare): en prod `https://hooks.xeye.es`, que va directo a Caddy | vacío (= `BACKEND_URL`) | recomendado con Cloudflare | `https://`, sin localhost |
 | `TRAINING_EMBEDDING_MODELS` | Modelos ofrecidos (el primero = por defecto); worker y search deben poder cargarlos | MiniLM,mpnet | recomendado | — |
 | `TRAINING_MAX_CONCURRENT` | Trainings lanzados a la vez en todo el backend; el resto espera en cola (≤ 0 = sin límite) | `1` | opcional | — |
 | `TRAINING_MAX_CONCURRENT_PER_USER` | Trainings lanzados a la vez por usuario (equidad de la cola; ≤ 0 = sin límite) | `1` | opcional | — |
@@ -113,6 +114,13 @@ defecto es `RATE_LIMIT_PER_MINUTE` del search-service y un admin lo cambia por c
 | `SENTRY_DSN` | DSN del proyecto `xeye-backend` (vacío = desactivado) | vacío | recomendado | — |
 | `SENTRY_ENVIRONMENT` | Etiqueta de entorno | `local` | `production` | — |
 | `SENTRY_RELEASE` | Commit desplegado; lo fija el Dockerfile (`GIT_SHA`) | vacío | automático | — |
+| `LOG_STRUCTURED_FORMAT` | Solo perfil `prod`: logs en JSON para el recolector (`ecs`, `logstash` o `gelf`); vacío = texto plano. Cada línea lleva `requestId` (el `X-Request-Id` de la petición o `outbox-<id>` del relé) | — (texto) | `ecs` (default) | — |
+
+Métricas: `GET /actuator/prometheus` (Micrometer: HTTP, JVM, Hikari, y las propias
+`xeye_trainings_total{outcome}`, `xeye_trainings_{queued,pending,launched}`, `xeye_outbox_{pending,failed}`).
+Solo lo recoge el Prometheus de la red docker (`xeye-infra`, overlay de monitorización); el proxy
+responde 404 a todo `/actuator/*` salvo `health`. Correlación: la respuesta devuelve siempre
+`X-Request-Id` (el del proxy si era sano, o uno nuevo) y el playground lo reenvía al buscador.
 
 ## Qué NO sale nunca en los logs
 

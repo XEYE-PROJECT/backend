@@ -5,6 +5,7 @@ import com.xeye.backend.training.application.port.in.TrainingLaunchService;
 import com.xeye.backend.training.application.port.in.TrainingLaunchUseCases;
 import com.xeye.backend.training.application.port.in.TrainingUseCases;
 import com.xeye.backend.training.application.port.out.TrainingLauncher;
+import com.xeye.backend.training.application.port.out.TrainingMetrics;
 import com.xeye.backend.training.domain.model.Training;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -34,12 +35,14 @@ public class TrainingDispatcher implements TrainingLaunchUseCases {
     private final TrainingLaunchService launchService;
     private final TrainingLauncher launcher;
     private final TrainingUseCases trainings;
+    private final TrainingMetrics metrics;
 
     public TrainingDispatcher(TrainingLaunchService launchService, TrainingLauncher launcher,
-                              TrainingUseCases trainings) {
+                              TrainingUseCases trainings, TrainingMetrics metrics) {
         this.launchService = launchService;
         this.launcher = launcher;
         this.trainings = trainings;
+        this.metrics = metrics;
     }
 
     @Override
@@ -103,6 +106,7 @@ public class TrainingDispatcher implements TrainingLaunchUseCases {
             log.error("Could not prepare training {} for launch", trainingId, ex);
             launchService.markFailed(trainingId, ex.getMessage());
             launchService.ensurePending(training.listId(), training.userId());
+            metrics.recordOutcome(TrainingMetrics.OUTCOME_LAUNCH_FAILED);
             return;
         }
         try {
@@ -114,6 +118,7 @@ public class TrainingDispatcher implements TrainingLaunchUseCases {
             launchService.markFailed(trainingId, ex.getMessage());
             // Los datos de la lista siguen sin entrenar: se re-marca para que el usuario reintente.
             launchService.ensurePending(command.listId(), training.userId());
+            metrics.recordOutcome(TrainingMetrics.OUTCOME_LAUNCH_FAILED);
         }
     }
 }

@@ -9,6 +9,7 @@ import com.xeye.backend.shared.http.OutboundHttp;
 import com.xeye.backend.shared.exception.NotFoundException;
 import com.xeye.backend.shared.exception.ServiceUnavailableException;
 import com.xeye.backend.shared.exception.TooManyRequestsException;
+import com.xeye.backend.shared.web.RequestId;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Qualifier;
@@ -53,11 +54,18 @@ public class HttpSearchQueryGateway implements SearchQueryGateway {
     @Override
     public SearchQueryResult search(Long listId, ConsoleSearchCommand command) {
         SearchBody body;
+        // El buscador acepta el mismo X-Request-Id: sus logs y los nuestros comparten el id.
+        String requestId = RequestId.current();
         try {
             body = breaker.call(() -> http.post()
                     .uri("/v1/lists/{listId}/search", listId)
                     .header("X-Internal-Service", internalServiceName)
                     .header("X-Internal-Token", internalToken)
+                    .headers(h -> {
+                        if (requestId != null) {
+                            h.set(RequestId.HEADER, requestId);
+                        }
+                    })
                     .contentType(MediaType.APPLICATION_JSON)
                     .body(new SearchRequest(command.searchTerm(), command.limit(), command.includeScoreBreakdown()))
                     .retrieve()

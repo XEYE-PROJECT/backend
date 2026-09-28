@@ -62,6 +62,12 @@
 			<groupId>org.springframework.boot</groupId>
 			<artifactId>spring-boot-starter-actuator</artifactId>
 		</dependency>
+		<!-- Métricas Prometheus en /actuator/prometheus (HTTP, JVM, Hikari + las propias xeye_*);
+		     las recoge el Prometheus del stack de monitorización por la red docker. -->
+		<dependency>
+			<groupId>io.micrometer</groupId>
+			<artifactId>micrometer-registry-prometheus</artifactId>
+		</dependency>
 
 		<!-- Error tracking: activo solo con SENTRY_DSN (application.yml). Starter específico de
 		     Spring Boot 4 (el "-jakarta" es para Boot 3). Incluye la integración con logback:

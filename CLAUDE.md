@@ -253,6 +253,27 @@ Cross-module reads use internal in-ports: `ApiKeyQueryPort.findAfterId`, `ListQu
 `ElementQueryPort.findByListId`/`countByListId`, `TrainingQueryPort.findInUseByListId`/
 `findEmbeddingsData`, `UserQueryPort.findSearchRateLimits`.
 
+## Observability (metrics, logs, request id)
+
+- **Metrics:** `micrometer-registry-prometheus` → `GET /actuator/prometheus` (permitted in
+  `SecurityConfig`; the production proxy 404s every `/actuator/*` except health, so only the
+  docker-network Prometheus of `xeye-infra` reaches it). Own meters: `MicrometerTrainingMetrics`
+  (`xeye.trainings` counter tagged `outcome` = completed/failed/stalled/launch_failed, fed through
+  the application port `TrainingMetrics` from the webhook controller, the dispatcher and the stalled
+  sweeper; gauges `xeye.trainings.{queued,pending,launched}` read from `TrainingRepository` on each
+  scrape) and `OutboxMetrics` (`xeye.outbox.{pending,failed}`). New meters: prefix `xeye.`, and keep
+  gauge readers cheap (they run on every scrape).
+- **Request id:** `RequestIdFilter` (first filter, `WebConfig`) puts `X-Request-Id` (the proxy's
+  if sane, else a new one) in the MDC as `requestId` and echoes it in the response; the console
+  pattern prints it (`logging.pattern.correlation`) and `OutboxRelay` sets `outbox-<id>` while
+  delivering. `HttpSearchQueryGateway` forwards it to the search service (same id in both logs).
+- **Structured logs:** profile `prod` logs JSON (`logging.structured.format.console`, ECS by
+  default, `LOG_STRUCTURED_FORMAT` env; empty = text). Never log secrets: see `CONFIG.md`.
+- **Callback host:** `xeye.training.callback-base-url` = `TRAINING_CALLBACK_BASE_URL` or
+  `BACKEND_URL`; `xeye.backend.public-url` (= `BACKEND_URL`) is what the SSO redirect uses. In
+  production the worker calls `hooks.xeye.es` (DNS-only, no Cloudflare body cap) while the public
+  API host sits behind Cloudflare.
+
 ## Common commands
 
 ```bash

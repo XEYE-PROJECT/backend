@@ -20,4 +20,7 @@ public interface OutboxRepository {
     void markFailed(Long id, int attempts, String error);
 
     long countPending();
+
+    /** Eventos que agotaron sus intentos ({@code failed}): alguien tiene que mirarlos. */
+    long countFailed();
 }

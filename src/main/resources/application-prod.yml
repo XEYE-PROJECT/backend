@@ -14,3 +14,9 @@ logging:
   level:
     root: INFO
     com.xeye.backend: INFO
+  # Logs en JSON (Elastic Common Schema: una línea por evento con @timestamp, log.level,
+  # message, el MDC —requestId— y la traza) para el recolector de logs del stack de
+  # monitorización. LOG_STRUCTURED_FORMAT=ecs|logstash|gelf; vacío = texto plano.
+  structured:
+    format:
+      console: ${LOG_STRUCTURED_FORMAT:ecs}

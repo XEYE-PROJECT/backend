@@ -18,6 +18,8 @@ logging:
     org.flywaydb: INFO
 
 xeye:
+  backend:
+    public-url: ${BACKEND_URL:http://localhost:8000}
   jwt:
     secret: ${JWT_SECRET:dev-only-insecure-secret-change-me-please-0123456789}
   cors:

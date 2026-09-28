@@ -74,14 +74,23 @@ server:
     max-swallow-size: 2MB
 
 
-# Actuator: solo /actuator/health (+ /liveness y /readiness) y sin detalles (el proxy bloquea el
-# resto de /actuator/*). Readiness incluye la BD: sin ella el servicio no puede atender nada;
-# liveness solo el estado del proceso (una BD caída no debe hacer que docker reinicie el backend).
+# Actuator: /actuator/health (+ /liveness y /readiness) sin detalles, y /actuator/prometheus
+# (métricas; solo lo alcanza el Prometheus de la red docker: el proxy bloquea /actuator/* salvo
+# health). Readiness incluye la BD: sin ella el servicio no puede atender nada; liveness solo el
+# estado del proceso (una BD caída no debe hacer que docker reinicie el backend).
 management:
   endpoints:
     web:
       exposure:
-        include: health
+        include: health,prometheus
+  metrics:
+    tags:
+      application: ${spring.application.name}
+    distribution:
+      # Histograma de latencias HTTP (buckets _bucket): percentiles en Prometheus/Grafana y la
+      # alerta de p95. Sin esto solo salen count/sum/max.
+      percentiles-histogram:
+        http.server.requests: true
   endpoint:
     health:
       show-details: never
@@ -98,6 +107,12 @@ management:
     mail:
       enabled: false
 
+# Cada línea de log lleva el X-Request-Id de la petición (RequestIdFilter lo deja en el MDC;
+# el relé del outbox pone "outbox-<id>"). En prod los logs salen además en JSON (application-prod.yml).
+logging:
+  pattern:
+    correlation: "[%X{requestId:-}] "
+
 # Sentry: desactivado si SENTRY_DSN está vacío (dev no necesita nada). Solo errores
 # (sin tracing); los logs a nivel ERROR se convierten en eventos vía logback.
 sentry:
@@ -112,6 +127,9 @@ sentry:
 
 # ---- Configuración propia de la aplicación (ver com.xeye.backend.shared.config) ----
 xeye:
+  backend:
+    # URL pública de este backend (redirect URIs del SSO: {BACKEND_URL}/auth/sso/{proveedor}/callback).
+    public-url: ${BACKEND_URL}
   http:
     # Tope del cuerpo de las peticiones (bytes): general, importación masiva, webhook del worker
     # (embeddings en base64 de toda la lista) y API interna (lotes de logs del buscador).
@@ -192,8 +210,10 @@ xeye:
     embedding-models: ${TRAINING_EMBEDDING_MODELS:paraphrase-multilingual-MiniLM-L12-v2,paraphrase-multilingual-mpnet-base-v2}
     # URL base pública a la que el worker llama de vuelta (…/webhooks/training-update).
     # Desde dentro de un contenedor no es localhost: usar http://xeye-java-backend:8000
-    # (misma red docker) o http://host.docker.internal:8000.
-    callback-base-url: ${BACKEND_URL}
+    # (misma red docker) o http://host.docker.internal:8000. Por defecto la del backend; en
+    # producción puede ser un host aparte que no pase por el WAF/CDN (los callbacks llevan los
+    # embeddings de toda la lista y superan el tope de body del borde): TRAINING_CALLBACK_BASE_URL.
+    callback-base-url: ${TRAINING_CALLBACK_BASE_URL:${BACKEND_URL}}
     mock-delay-ms: ${TRAINING_MOCK_DELAY_MS:500}
     # Un training lanzado sin actualización del webhook en este tiempo se marca fallido y su
     # lista vuelve a pending (worker muerto / callback perdido). 0 desactiva el barrido.

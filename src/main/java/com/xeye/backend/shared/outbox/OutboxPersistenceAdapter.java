@@ -61,6 +61,12 @@ class OutboxPersistenceAdapter implements OutboxRepository {
         return jpa.countByStatus(OutboxJpaEntity.STATUS_PENDING);
     }
 
+    @Override
+    @Transactional(readOnly = true)
+    public long countFailed() {
+        return jpa.countByStatus(OutboxJpaEntity.STATUS_FAILED);
+    }
+
     private static String truncate(String error) {
         if (error == null) {
             return null;

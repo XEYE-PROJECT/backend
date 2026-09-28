@@ -15,6 +15,8 @@ services:
   mariadb:
     image: mariadb:10.11
     container_name: xeye-java-mariadb
+    restart: unless-stopped
+    mem_limit: 512m
     environment:
       MARIADB_ROOT_PASSWORD: ${DB_ROOT_PASSWORD:-rootpassword}
       MARIADB_DATABASE: ${DB_NAME:-xeye}
@@ -39,6 +41,9 @@ services:
       context: .
       dockerfile: Dockerfile.dev
     container_name: xeye-java-backend
+    restart: unless-stopped
+    # Maven + DevTools + la app: en dev necesita más que los 768m de producción.
+    mem_limit: 1536m
     depends_on:
       mariadb:
         condition: service_healthy

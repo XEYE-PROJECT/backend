@@ -67,6 +67,8 @@ public class SecurityConfig {
                 .authorizeHttpRequests(auth -> auth
                         .requestMatchers("/auth/logout", "/auth/logout-all").authenticated()
                         .requestMatchers("/auth/**", "/actuator/health", "/actuator/health/**").permitAll()
+                        // Métricas para el Prometheus de la red docker; el proxy devuelve 404 desde fuera.
+                        .requestMatchers("/actuator/prometheus").permitAll()
                         .requestMatchers("/admin/**").hasRole(ROLE_ADMIN)
                         // Sin JWT: los autentica SharedSecretAuthenticationFilter con su cabecera.
                         .requestMatchers("/webhooks/**").hasRole(ROLE_TRAINING_WORKER)

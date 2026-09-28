@@ -55,7 +55,7 @@ public class SsoController {
     private final String backendUrl;
 
     public SsoController(AuthUseCases auth, OidcClient oidc, SsoExchangeStore exchanges, JwtService jwt,
-                         AuthProperties props, @Value("${xeye.training.callback-base-url}") String backendUrl) {
+                         AuthProperties props, @Value("${xeye.backend.public-url}") String backendUrl) {
         this.auth = auth;
         this.oidc = oidc;
         this.exchanges = exchanges;

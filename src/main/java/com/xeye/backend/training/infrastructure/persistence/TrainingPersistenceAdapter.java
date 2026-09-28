@@ -98,6 +98,11 @@ public class TrainingPersistenceAdapter implements TrainingRepository {
     }
 
     @Override
+    public long countByStatus(TrainingStatus status) {
+        return jpa.countByStatusIn(List.of(status.value()));
+    }
+
+    @Override
     public Map<Long, Long> countLaunchedByUser() {
         Map<Long, Long> counts = new HashMap<>();
         for (Object[] row : jpa.countByUserIdWhereStatusIn(LAUNCHED_STATUSES)) {

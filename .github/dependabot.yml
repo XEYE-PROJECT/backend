@@ -1,0 +1,32 @@
+# Dependabot: PRs semanales (lunes) para las actions (fijadas por SHA: actualiza el SHA y el
+# comentario de versión), las dependencias Maven y las imágenes base del Dockerfile (fijadas por
+# digest). Las actualizaciones de parche/menor se agrupan en una sola PR para no inundar.
+version: 2
+updates:
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+    groups:
+      actions:
+        patterns: ["*"]
+
+  - package-ecosystem: maven
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+    groups:
+      maven-minor-patch:
+        update-types: ["minor", "patch"]
+    ignore:
+      # Spring Boot mayor: se migra a mano (ver CLAUDE.md, "Spring Boot 4 gotchas").
+      - dependency-name: org.springframework.boot:spring-boot-starter-parent
+        update-types: ["version-update:semver-major"]
+
+  - package-ecosystem: docker
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday

@@ -1,6 +1,7 @@
 package com.xeye.backend.training.application;
 
 import com.xeye.backend.training.application.port.in.TrainingLaunchService;
+import com.xeye.backend.training.application.port.out.TrainingMetrics;
 import com.xeye.backend.training.config.TrainingProperties;
 import com.xeye.backend.training.domain.model.Training;
 import org.slf4j.Logger;
@@ -28,12 +29,14 @@ public class TrainingStalledSweeper {
     private final TrainingLaunchService launchService;
     private final TrainingDispatcher dispatcher;
     private final TrainingProperties properties;
+    private final TrainingMetrics metrics;
 
     public TrainingStalledSweeper(TrainingLaunchService launchService, TrainingDispatcher dispatcher,
-                                  TrainingProperties properties) {
+                                  TrainingProperties properties, TrainingMetrics metrics) {
         this.launchService = launchService;
         this.dispatcher = dispatcher;
         this.properties = properties;
+        this.metrics = metrics;
     }
 
     @Scheduled(initialDelayString = "PT1M", fixedDelayString = "PT2M")
@@ -47,9 +50,12 @@ public class TrainingStalledSweeper {
         for (Training training : stalled) {
             // El lanzamiento des-entrenó los elementos de la lista, así que de verdad necesita reentrenar.
             launchService.ensurePending(training.listId(), training.userId());
+            metrics.recordOutcome(TrainingMetrics.OUTCOME_STALLED);
         }
         if (!stalled.isEmpty()) {
-            log.info("Marked {} stalled training(s) as failed", stalled.size());
+            // ERROR a propósito: es un evento de Sentry y la alerta "trainings fallidos" del monitor.
+            log.error("Marked {} stalled training(s) as failed (no worker heartbeat for {} min): {}",
+                    stalled.size(), minutes, stalled.stream().map(Training::id).toList());
             dispatcher.dispatch();
         }
     }

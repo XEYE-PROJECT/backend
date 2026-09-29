@@ -27,8 +27,9 @@ import java.util.Map;
 /**
  * Seguridad sin estado: contraseñas BCrypt, filtro JWT bearer para los usuarios (con revocación
  * por jti y versión de sesión), rate limit por IP en los endpoints públicos de autenticación y dos
- * filtros de secreto compartido para las llamadas servidor-a-servidor ({@code /webhooks/**} del
- * worker de training, {@code /internal/**} del search-service), que exigen su rol de servicio.
+ * filtros de token en cabecera para las llamadas servidor-a-servidor ({@code /webhooks/**} del
+ * worker de training con un token HMAC por entrenamiento, {@code /internal/**} del search-service
+ * con el secreto compartido), que exigen su rol de servicio.
  * Públicos: {@code /auth/**} (salvo logout) y {@code /actuator/health} (+ liveness/readiness); {@code /admin/**} exige
  * ROLE_ADMIN (además del {@code @PreAuthorize} de cada controlador); todo lo demás exige JWT.
  */
@@ -93,14 +94,19 @@ public class SecurityConfig {
                         UsernamePasswordAuthenticationFilter.class)
                 .addFilterBefore(new JwtAuthenticationFilter(jwtService, revocations),
                         UsernamePasswordAuthenticationFilter.class)
+                // El worker no conoce el secreto: presenta el token por entrenamiento que el backend
+                // derivó de él al lanzar (WebhookTokens); el controlador exige que firme el training del cuerpo.
                 .addFilterBefore(new SharedSecretAuthenticationFilter(
                                 PathPatternRequestMatcher.withDefaults().matcher("/webhooks/**"),
-                                "X-Webhook-Token", webhookSecret, new ServicePrincipal("training-worker"),
+                                "X-Webhook-Token",
+                                SharedSecretAuthenticationFilter.perTrainingToken(webhookSecret, "training-worker"),
                                 ROLE_TRAINING_WORKER, "Invalid webhook token", objectMapper),
                         UsernamePasswordAuthenticationFilter.class)
                 .addFilterBefore(new SharedSecretAuthenticationFilter(
                                 PathPatternRequestMatcher.withDefaults().matcher("/internal/**"),
-                                "X-Internal-Token", internalToken, new ServicePrincipal("search-service"),
+                                "X-Internal-Token",
+                                SharedSecretAuthenticationFilter.sharedSecret(internalToken,
+                                        new ServicePrincipal("search-service")),
                                 ROLE_SEARCH_SERVICE, "Invalid internal token", objectMapper),
                         UsernamePasswordAuthenticationFilter.class);
         return http.build();

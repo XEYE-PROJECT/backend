@@ -20,8 +20,8 @@ import java.util.Map;
  * Envía un job a un endpoint Serverless de RunPod ({@code POST /v2/{endpointId}/run}). Las
  * claves del objeto {@code input} coinciden exactamente con lo que lee el training-service de
  * XEYE, así el worker corre sin cambios. El propio worker entrega el resultado a nuestro
- * webhook con {@code X-Webhook-Token}: el secreto está en las variables del endpoint
- * ({@code WEBHOOK_SECRET}), nunca dentro del job que RunPod almacena. La llamada tiene timeout
+ * webhook con {@code X-Webhook-Token}: el token por entrenamiento que viaja en el job (derivado
+ * del secreto con HMAC); el secreto en sí nunca sale del backend. La llamada tiene timeout
  * de conexión y de lectura ({@code RUNPOD_TIMEOUT_SECONDS}) y NO se reintenta: un {@code /run}
  * repetido lanzaría (y cobraría) dos jobs; si falla, el training queda fallido y la lista pendiente.
  */
@@ -47,6 +47,7 @@ public class RunPodTrainingLauncher implements TrainingLauncher {
         input.put("list_id", command.listId());
         input.put("user_id", command.userId());
         input.put("callback_url", command.callbackUrl());
+        input.put("webhook_token", command.webhookToken());
         input.put("list", command.list());
         input.put("elements", command.elements());
         input.put("options", command.options() == null ? List.of() : command.options());

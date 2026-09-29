@@ -10,6 +10,7 @@ import com.xeye.backend.shared.exception.ConflictException;
 import com.xeye.backend.shared.exception.NotFoundException;
 import com.xeye.backend.shared.paging.Page;
 import com.xeye.backend.shared.paging.Paging;
+import com.xeye.backend.shared.security.WebhookTokens;
 import com.xeye.backend.training.application.command.SearchIndexCommand;
 import com.xeye.backend.training.application.command.TrainingLaunchCommand;
 import com.xeye.backend.training.application.command.TrainingUpdateCommand;
@@ -141,7 +142,8 @@ public class TrainingService implements TrainingUseCases, TrainingLaunchService,
         if (!list.userId().equals(userId)) {
             throw new NotFoundException("List not found");
         }
-        return presetCost(elements.findByListId(listId), regenerateDescriptions, noDescriptions);
+        return presetCost(elements.findByListId(listId), regenerateDescriptions,
+                noDescriptions || !list.llmEnrichment());
     }
 
     /**
@@ -256,11 +258,14 @@ public class TrainingService implements TrainingUseCases, TrainingLaunchService,
         if (elements.countByListId(listId) == 0) {
             throw new BadRequestException("The list has no elements to train");
         }
+        // Una lista que renunció al LLM (opt-out) se entrena siempre sin descripciones IA, pida
+        // lo que pida el lanzamiento.
+        boolean skipLlm = noDescriptions || !lists.findById(listId).map(ItemList::llmEnrichment).orElse(true);
         // force_enrich es la opción que el worker ya entiende (steps/enrich.py): con ella ignora
         // el enriquecimiento cacheado y regenera las descripciones LLM de todos los elementos,
         // devolviéndolas en el webhook (que las re-cachea). Con noDescriptions se envía en su
         // lugar strategy=embeddings_only (strategies.py: sin paso LLM) y force_enrich a false.
-        List<TrainingOption> options = noDescriptions
+        List<TrainingOption> options = skipLlm
                 ? List.of(
                         new TrainingOption("train_all", true),
                         new TrainingOption("embedding_model", resolveEmbeddingModel(embeddingModel)),
@@ -318,7 +323,9 @@ public class TrainingService implements TrainingUseCases, TrainingLaunchService,
         if (listElements.isEmpty()) {
             throw new BadRequestException("The list has no elements to train");
         }
-        boolean noDescriptions = "embeddings_only".equals(training.option("strategy"));
+        // El opt-out de la lista manda aunque haya cambiado después de encolar: el worker
+        // recibe llm_enrichment=false en el job y no llama al LLM, y aquí no se cobra ninguna descripción.
+        boolean noDescriptions = "embeddings_only".equals(training.option("strategy")) || !list.llmEnrichment();
         boolean regenerate = Boolean.TRUE.equals(training.option("force_enrich"));
 
         // Se reentrena la lista entera, así que nada está "entrenado" hasta que complete.
@@ -340,10 +347,12 @@ public class TrainingService implements TrainingUseCases, TrainingLaunchService,
         training.priceAtLaunch(new TrainingCost(null, preset.fixed(), preset.enrichment(), preset.total()));
         trainings.save(training);
 
+        // Token por entrenamiento: el worker lo devuelve en X-Webhook-Token y solo vale para este run.
         return new TrainingLaunchCommand(
                 training.id(), listId, training.userId(),
                 properties.callbackUrl(),
-                new TrainingLaunchCommand.ListPayload(list.id(), list.name(), list.description()),
+                WebhookTokens.issue(properties.webhookSecret(), training.id()),
+                new TrainingLaunchCommand.ListPayload(list.id(), list.name(), list.description(), list.llmEnrichment()),
                 payload, training.options());
     }
 

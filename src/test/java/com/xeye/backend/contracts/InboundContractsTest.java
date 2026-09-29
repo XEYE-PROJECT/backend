@@ -31,7 +31,10 @@ class InboundContractsTest {
         assertEquals("completed", request.status());
         assertEquals(2, request.describedCount());
         assertEquals(5L, request.time().totalSeconds());
-        assertEquals(0.000694, request.cost().total());
+        assertEquals(0.000814, request.cost().total());
+        assertEquals(0.00012, request.cost().llm());
+        assertEquals(812L, request.usage().llmInputTokens());
+        assertEquals(Boolean.FALSE, request.usage().llmBudgetExhausted());
         // base64(np.save) del worker: cabecera NumPy en los primeros bytes.
         byte[] embeddings = Base64.getDecoder().decode(request.embeddingsData());
         assertEquals("NUMPY", new String(embeddings, 1, 5, java.nio.charset.StandardCharsets.US_ASCII));
@@ -40,6 +43,9 @@ class InboundContractsTest {
         assertEquals(Map.of(101L, ContractFixtures.tree("training-webhook-completed.json")
                 .get("generated_descriptions").get("101").asString()), command.generatedDescriptions());
         assertTrue(command.model().contains("\"embedding_model\""));
+        // El coste real del worker (cómputo + LLM con sus tokens) llega al dominio; el precio lo pone el backend.
+        assertEquals(0.00012, command.cost().llm());
+        assertEquals(203L, command.cost().llmOutputTokens());
     }
 
     @Test

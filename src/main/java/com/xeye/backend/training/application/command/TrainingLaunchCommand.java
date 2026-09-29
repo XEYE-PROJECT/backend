@@ -12,18 +12,25 @@ import java.util.List;
  * así que renombrar un componente rompe en silencio todos los providers.
  * <p>
  * El secreto del webhook NO viaja aquí a propósito: el job se escribe en disco (docker) o lo
- * almacena RunPod, así que el worker lo recibe por su entorno ({@code WEBHOOK_SECRET}).
+ * almacena RunPod. Viaja {@code webhookToken}, un token derivado de él con HMAC que solo vale
+ * para reportar sobre <em>este</em> entrenamiento ({@code shared/security/WebhookTokens}).
  */
 public record TrainingLaunchCommand(
         @JsonProperty("training_id") Long trainingId,
         @JsonProperty("list_id") Long listId,
         @JsonProperty("user_id") Long userId,
         @JsonProperty("callback_url") String callbackUrl,
+        @JsonProperty("webhook_token") String webhookToken,
         ListPayload list,
         List<ElementPayload> elements,
         List<TrainingOption> options) {
 
-    public record ListPayload(Long id, String name, String description) {
+    /**
+     * {@code llmEnrichment} false = la lista ha renunciado al LLM: el worker no envía ningún
+     * texto a un modelo (ni local ni remoto) aunque las opciones del run digan otra cosa.
+     */
+    public record ListPayload(Long id, String name, String description,
+                              @JsonProperty("llm_enrichment") boolean llmEnrichment) {
     }
 
     /**

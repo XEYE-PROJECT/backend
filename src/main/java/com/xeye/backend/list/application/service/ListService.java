@@ -50,7 +50,8 @@ public class ListService implements ListUseCases, ListQueryPort {
     @Override
     @Transactional
     public ItemList create(Long userId, CreateListCommand command) {
-        ItemList list = ItemList.create(userId, command.name(), command.description(), command.isPublic());
+        ItemList list = ItemList.create(userId, command.name(), command.description(), command.isPublic(),
+                command.llmEnrichment());
         ItemList saved = lists.save(list);
         // Avisar al search-service ya: si no, una lista pública nueva no es buscable
         // hasta que complete un entrenamiento o refresque su catálogo.
@@ -71,6 +72,10 @@ public class ListService implements ListUseCases, ListQueryPort {
         }
         if (command.isPublic() != null) {
             list.changeVisibility(command.isPublic());
+        }
+        // El opt-out del LLM no reentrena nada: solo cambia cómo se ejecutará el próximo entrenamiento.
+        if (command.llmEnrichment() != null) {
+            list.changeLlmEnrichment(command.llmEnrichment());
         }
         boolean descriptionChanged = false;
         if (command.description() != null && !Objects.equals(previousDescription, command.description())) {

@@ -1,6 +1,7 @@
 package com.xeye.backend.it;
 
 import com.xeye.backend.contracts.ContractFixtures;
+import com.xeye.backend.shared.security.WebhookTokens;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ValueSource;
 
@@ -21,7 +22,7 @@ class WebhookContractIT extends AbstractIntegrationTest {
         "training-webhook-failed.json"})
     void workerPayloadsAreAcceptedByTheWebhook(String fixture) {
         Response response = exchange("POST", "/webhooks/training-update", ContractFixtures.read(fixture), null,
-                Map.of("X-Webhook-Token", WEBHOOK_SECRET));
+                Map.of("X-Webhook-Token", WebhookTokens.issue(WEBHOOK_SECRET, 42)));
         assertEquals(404, response.status(), () -> fixture + " -> " + response.body());
         assertEquals("NOT_FOUND", response.code());
     }

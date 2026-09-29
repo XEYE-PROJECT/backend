@@ -66,6 +66,18 @@ public class TrainingDispatcher implements TrainingLaunchUseCases {
         return launch(userId, pending.id(), embeddingModel, regenerateDescriptions, noDescriptions);
     }
 
+    /**
+     * El worker ya leyó el job (primer callback) o ya no lo leerá (estancado): el provider puede
+     * borrar lo que guardara para él (el fichero del job del provider docker). Nunca falla.
+     */
+    public void releaseJobInput(Long trainingId) {
+        try {
+            launcher.release(trainingId);
+        } catch (Exception ex) {
+            log.warn("Could not release the job input of training {}: {}", trainingId, ex.getMessage());
+        }
+    }
+
     /** Red de seguridad: por si un despacho se saltó (p. ej. el candado estaba ocupado al encolar). */
     @Scheduled(initialDelayString = "PT10S", fixedDelayString = "PT5S")
     public void poll() {
@@ -115,6 +127,7 @@ public class TrainingDispatcher implements TrainingLaunchUseCases {
             log.info("Launched training {} for list {} (instance {})", trainingId, command.listId(), instanceId);
         } catch (Exception ex) {
             log.error("Failed to launch training {}", trainingId, ex);
+            releaseJobInput(trainingId);
             launchService.markFailed(trainingId, ex.getMessage());
             // Los datos de la lista siguen sin entrenar: se re-marca para que el usuario reintente.
             launchService.ensurePending(command.listId(), training.userId());

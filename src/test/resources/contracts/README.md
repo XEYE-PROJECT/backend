@@ -17,3 +17,7 @@ CI el lado que no se actualizó, no en producción.
 `embeddingsData` es una matriz 2×4 float32 real (`base64(np.save)`), `model` el string opaco que
 emite el worker y `keyHash` un SHA-256 de un valor ficticio. Para cambiar un contrato: edita aquí,
 copia a los otros dos repos y arregla los tests que fallen en cada lado.
+
+`webhook_token` del job es `WebhookTokens.issue(secreto, 42)` con el secreto de los tests de
+integración (`AbstractIntegrationTest.WEBHOOK_SECRET`): `<trainingId>.<hex(HMAC-SHA256(secreto,
+"training-webhook:" + trainingId))>`. El worker lo devuelve tal cual en `X-Webhook-Token`.

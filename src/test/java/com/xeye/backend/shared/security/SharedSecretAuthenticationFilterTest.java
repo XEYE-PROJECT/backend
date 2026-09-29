@@ -29,10 +29,21 @@ class SharedSecretAuthenticationFilterTest {
         SecurityContextHolder.clearContext();
     }
 
+    /** Modo secreto compartido (API interna), montado sobre la ruta del webhook para reutilizar las peticiones. */
     private SharedSecretAuthenticationFilter filter(String configuredSecret) {
         return new SharedSecretAuthenticationFilter(
                 PathPatternRequestMatcher.withDefaults().matcher("/webhooks/**"),
-                "X-Webhook-Token", configuredSecret, new ServicePrincipal("training-worker"),
+                "X-Webhook-Token",
+                SharedSecretAuthenticationFilter.sharedSecret(configuredSecret, new ServicePrincipal("training-worker")),
+                "TRAINING_WORKER", "Invalid webhook token", new ObjectMapper());
+    }
+
+    /** Modo token por entrenamiento (webhook del worker). */
+    private SharedSecretAuthenticationFilter perTrainingFilter(String configuredSecret) {
+        return new SharedSecretAuthenticationFilter(
+                PathPatternRequestMatcher.withDefaults().matcher("/webhooks/**"),
+                "X-Webhook-Token",
+                SharedSecretAuthenticationFilter.perTrainingToken(configuredSecret, "training-worker"),
                 "TRAINING_WORKER", "Invalid webhook token", new ObjectMapper());
     }
 
@@ -79,6 +90,35 @@ class SharedSecretAuthenticationFilterTest {
         filter("   ").doFilter(request("/webhooks/training-update", "   "), response, chain);
 
         assertEquals(403, response.getStatus());
+        verify(chain, never()).doFilter(org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.any());
+    }
+
+    @Test
+    void perTrainingTokenAuthenticatesTheWorkerForThatTraining() throws Exception {
+        MockHttpServletResponse response = new MockHttpServletResponse();
+
+        perTrainingFilter(SECRET).doFilter(
+                request("/webhooks/training-update", WebhookTokens.issue(SECRET, 42)), response, chain);
+
+        verify(chain).doFilter(org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.any());
+        Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
+        assertNotNull(authentication);
+        assertEquals(new ServicePrincipal("training-worker", 42L), authentication.getPrincipal());
+        assertTrue(authentication.getAuthorities().stream()
+                .anyMatch(a -> a.getAuthority().equals("ROLE_TRAINING_WORKER")));
+    }
+
+    @Test
+    void theRawSecretNoLongerOpensTheWebhook() throws Exception {
+        // El secreto solo vive en el backend: en la cabecera solo valen tokens derivados de él.
+        for (String token : new String[]{SECRET, "42." + SECRET, "42.", "wrong"}) {
+            MockHttpServletResponse response = new MockHttpServletResponse();
+
+            perTrainingFilter(SECRET).doFilter(request("/webhooks/training-update", token), response, chain);
+
+            assertEquals(403, response.getStatus(), "token=" + token);
+            assertNull(SecurityContextHolder.getContext().getAuthentication());
+        }
         verify(chain, never()).doFilter(org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.any());
     }
 

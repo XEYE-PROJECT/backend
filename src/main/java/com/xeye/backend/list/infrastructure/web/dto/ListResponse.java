@@ -11,6 +11,8 @@ public record ListResponse(
         String name,
         String description,
         @JsonProperty("public") boolean isPublic,
+        /** false = la lista renuncia a las descripciones generadas por un LLM (se entrena sin paso IA). */
+        boolean llmEnrichment,
         Long userId,
         long elementCount,
         Instant createdAt,
@@ -26,6 +28,7 @@ public record ListResponse(
                 list.name(),
                 list.description(),
                 list.isPublic(),
+                list.llmEnrichment(),
                 list.userId(),
                 elementCount,
                 list.createdAt(),

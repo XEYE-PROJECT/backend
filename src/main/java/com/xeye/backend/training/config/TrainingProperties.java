@@ -54,9 +54,13 @@ public record TrainingProperties(
      * @param gpus         valor de {@code docker run --gpus} ("all", "device=0", …); vacío = CPU.
      *                     El launcher reintenta sin GPU si el daemon no puede darla, así que
      *                     dejar "all" es seguro en una máquina sin GPU
+     * @param workerUid    uid con el que corre el worker en su imagen (usuario {@code xeye}, 1000).
+     *                     El fichero del job se escribe con permisos 600 y, si este proceso es
+     *                     root (backend en contenedor), se le cede a ese uid para que el worker
+     *                     pueda leerlo; vacío = no cambiar el propietario
      */
     public record Docker(String image, String inputDir, String hostInputDir, String network,
-                         List<String> env, String gpus, String dockerBinary) {
+                         List<String> env, String gpus, String dockerBinary, String workerUid) {
     }
 
     /** {@code timeoutSeconds}: timeout de lectura del {@code POST /run} (el job corre asíncrono y responde por webhook). */

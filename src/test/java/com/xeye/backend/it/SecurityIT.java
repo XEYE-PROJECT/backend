@@ -1,5 +1,6 @@
 package com.xeye.backend.it;
 
+import com.xeye.backend.shared.security.WebhookTokens;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.jdbc.core.JdbcTemplate;
@@ -93,12 +94,21 @@ class SecurityIT extends AbstractIntegrationTest {
     }
 
     @Test
-    void webhookRequiresTheSharedSecretAndFailsClosed() {
+    void webhookRequiresAPerTrainingTokenAndFailsClosed() {
         String body = "{\"training_id\":1,\"list_id\":1,\"status\":\"training\"}";
         assertEquals(403, post("/webhooks/training-update", body, null).status());
-        assertEquals(403, exchange("POST", "/webhooks/training-update", body, null,
-                Map.of("X-Webhook-Token", "wrong")).status());
-        assertEquals(403, exchange("POST", "/webhooks/training-update", body, null,
-                Map.of("X-Webhook-Token", INTERNAL_TOKEN)).status());
+        for (String token : new String[]{"wrong", INTERNAL_TOKEN, WEBHOOK_SECRET}) {
+            assertEquals(403, exchange("POST", "/webhooks/training-update", body, null,
+                    Map.of("X-Webhook-Token", token)).status(), "token=" + token);
+        }
+        // Un token válido de OTRO entrenamiento no puede reportar sobre este.
+        Response foreign = exchange("POST", "/webhooks/training-update", body, null,
+                Map.of("X-Webhook-Token", WebhookTokens.issue(WEBHOOK_SECRET, 2)));
+        assertEquals(403, foreign.status());
+        assertEquals("WEBHOOK_TOKEN_MISMATCH", foreign.code());
+        // El token del propio run pasa el filtro y el controlador (el training 1 no existe: 404).
+        Response own = exchange("POST", "/webhooks/training-update", body, null,
+                Map.of("X-Webhook-Token", WebhookTokens.issue(WEBHOOK_SECRET, 1)));
+        assertEquals(404, own.status());
     }
 }

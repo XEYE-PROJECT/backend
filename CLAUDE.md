@@ -152,16 +152,24 @@ Trigger → pending → enqueue (user) → dispatch → callback → activate. A
    price; then `TrainingLauncher.launch(...)` **outside any transaction**, then `markLaunched`
    (sets the instance id; it never regresses a status a fast worker callback already advanced).
    A launch failure marks the run `FAILED` and re-flags the list pending. The webhook secret is
-   **not** in the payload: the docker launcher passes it as `-e WEBHOOK_SECRET`, the RunPod
-   endpoint has it in its env. Queued runs show `queuePosition` in the API.
+   **never** in the payload nor given to the worker: the job carries `webhook_token` =
+   `WebhookTokens.issue(secret, trainingId)` (`<id>.<hex HMAC-SHA256>`), valid only for that run.
+   A list with `llmEnrichment=false` (opt-out, `lists.llm_enrichment`, V10) is always enqueued
+   as `embeddings_only` and the job says `list.llm_enrichment=false` (the worker skips the LLM
+   step regardless). Queued runs show `queuePosition` in the API.
 3. **Provider** (`xeye.training.provider`). All three send the *same* job payload
    (`TrainingLaunchCommand`, whose component names are snake_case **on purpose** — the Python
    worker reads them literally) and answer on the same webhook; they differ only in where the
    container runs:
    - `mock` (default, dev): `MockTrainingLauncher` simulates completion in-process after a short
      delay by calling `TrainingCompletionHandler.applyUpdate(completed)` — exercises the whole path.
-   - `docker`: `DockerTrainingLauncher` writes the job JSON to `xeye.training.docker.input-dir` and
-     `docker run -d --rm`s one `../training-service` container per training. Needs the docker socket
+   - `docker`: `DockerTrainingLauncher` writes the job JSON (mode 600, atomically, chowned to
+     `docker.worker-uid` when running as root) to `xeye.training.docker.input-dir` (default
+     `~/.xeye/training-jobs`, never `/tmp`) and `docker run -d --rm`s one `../training-service`
+     container per training (`-e CALLBACK_ALLOW_HTTP=true` when the callback is `http://`). The
+     file is deleted by `TrainingLauncher.release(id)` (via `TrainingDispatcher.releaseJobInput`)
+     on the first webhook callback, on launch failure and when the stalled sweeper fails the run;
+     files older than a day are swept on each launch. Needs the docker socket
      (mounted in `docker-compose.dev.yml`) and `host-input-dir` = the same dir *as the daemon sees
      it* (a bind mount is always resolved on the host). It passes `--gpus` (`docker.gpus`, default
      `all`) and **retries once without it** if the daemon cannot provide a GPU — the GPU is used
@@ -169,7 +177,9 @@ Trigger → pending → enqueue (user) → dispatch → callback → activate. A
      can actually use it; the launcher always overrides the CMD with the one-shot entrypoint.
    - `runpod`: `RunPodTrainingLauncher` POSTs `https://api.runpod.ai/v2/{endpointId}/run`.
 4. **Callback.** `POST /webhooks/training-update` (`TrainingWebhookController`; the
-   `X-Webhook-Token` header is verified by `SharedSecretAuthenticationFilter`) →
+   `X-Webhook-Token` header holds the per-training token, verified by
+   `SharedSecretAuthenticationFilter.perTrainingToken` → `ServicePrincipal(trainingId)`; the
+   controller answers 403 `WEBHOOK_TOKEN_MISMATCH` if the body's `training_id` differs) →
    `TrainingService.applyUpdate`, a **strict, idempotent state machine**
    (`TrainingStatus.canTransitionTo`): callbacks only move forward, a repeated status is a
    heartbeat, anything on a terminal run is ignored (200 with `applied: false`), `list_id` must
@@ -182,7 +192,8 @@ Trigger → pending → enqueue (user) → dispatch → callback → activate. A
    is the flag), set model/time/cost, cache the worker's `generated_descriptions` on the elements
    (batched, see below), set this training **`in_use=true`** (clearing it on all other trainings
    of the list), mark the list's elements `trained=true`, and publish
-   `SearchIndexRequestedEvent` (outbox).
+   `SearchIndexRequestedEvent` (outbox). The worker's `cost` (`runpod`, `llm`) and `usage` (LLM
+   tokens) are the *real* cost, kept in `TrainingCost` next to the user-facing price.
 5. **Search push** (`xeye.search.provider`): `TrainingOutboxHandler` → `pushToSearch(trainingId)`
    → `SearchIndexer`. `log` (default, dev) just logs; `http` (`HttpSearchIndexer`) POSTs
    `{url}/v1/lists/{listId}/index` with `X-Internal-Service: backend` + `X-Internal-Token`,

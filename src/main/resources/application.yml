@@ -202,8 +202,9 @@ xeye:
     #   docker -> un contenedor local por training (`docker run`, imagen del training-service)
     #   runpod -> POST del job a un endpoint Serverless de RunPod (GPU: el montaje con LLM local)
     provider: ${TRAINING_PROVIDER}
-    # Secreto de la cabecera X-Webhook-Token del callback del worker. El worker lo recibe por
-    # su entorno (WEBHOOK_SECRET), nunca dentro del payload del job.
+    # Secreto con el que se firma (HMAC-SHA256) el token por entrenamiento que viaja en el job y
+    # que el worker devuelve en X-Webhook-Token. El secreto no sale del backend: ni al fichero
+    # del job, ni al endpoint de RunPod (rotarlo solo invalida los trainings en vuelo).
     webhook-secret: ${TRAINING_WEBHOOK_SECRET}
     # Modelos ofrecidos al lanzar un training pendiente (el primero = por defecto). Tanto el
     # worker de training como el search-service deben poder cargar cada nombre listado aquí.
@@ -234,11 +235,15 @@ xeye:
       per-description: ${TRAINING_PRICE_PER_DESCRIPTION:0.0053}
     docker:
       image: ${TRAINING_DOCKER_IMAGE:xeye-training-service:latest}
-      # Dónde escribimos el JSON del job, y ese mismo directorio tal como lo ve el daemon de
-      # docker. Coinciden si el backend corre en el host; difieren si corre en un contenedor
-      # (un bind mount siempre se resuelve en el host).
-      input-dir: ${TRAINING_INPUT_DIR:/tmp/xeye-training}
-      host-input-dir: ${TRAINING_HOST_INPUT_DIR:${TRAINING_INPUT_DIR:/tmp/xeye-training}}
+      # Dónde escribimos el JSON del job (permisos 600, se borra en cuanto el worker lo ha
+      # leído; fuera de /tmp, que es legible por todos), y ese mismo directorio tal como lo ve
+      # el daemon de docker. Coinciden si el backend corre en el host; difieren si corre en un
+      # contenedor (un bind mount siempre se resuelve en el host).
+      input-dir: ${TRAINING_INPUT_DIR:${user.home}/.xeye/training-jobs}
+      host-input-dir: ${TRAINING_HOST_INPUT_DIR:${TRAINING_INPUT_DIR:${user.home}/.xeye/training-jobs}}
+      # uid del usuario `xeye` de la imagen del worker: el fichero 600 del job se le cede si este
+      # proceso es root (backend en contenedor). Vacío = no cambiar el propietario.
+      worker-uid: ${TRAINING_DOCKER_WORKER_UID:1000}
       network: ${TRAINING_DOCKER_NETWORK:xeye-network}
       # Variables KEY=VALUE extra para el worker, p. ej. ENRICHER=groq,GROQ_API_KEY=...
       env: ${TRAINING_DOCKER_ENV:}

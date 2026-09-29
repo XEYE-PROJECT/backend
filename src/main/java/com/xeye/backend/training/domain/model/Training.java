@@ -159,8 +159,9 @@ public class Training {
      * El precio fijo lo preestablece el backend al lanzar; el de enriquecimiento se ajusta al
      * completar a las descripciones realmente generadas ({@code actualEnrichmentCost}): el worker
      * tolera fallos del LLM por elemento, así que puede devolver menos de las estimadas. Del
-     * worker solo se toma el coste de cómputo. Sin precio preestablecido (trainings antiguos o el
-     * flujo mock sin lanzamiento) vale lo que reporte el worker.
+     * worker solo se toman los costes reales (cómputo y LLM, con sus tokens), que son informativos
+     * y no entran en el precio. Sin precio preestablecido (trainings antiguos o el flujo mock sin
+     * lanzamiento) vale lo que reporte el worker.
      */
     private static TrainingCost mergeCost(TrainingCost preset, TrainingCost reported, Double actualEnrichmentCost) {
         if (preset == null) {
@@ -171,7 +172,8 @@ public class Training {
         double enrichment = actualEnrichmentCost != null ? actualEnrichmentCost
                 : preset.enrichment() == null ? 0.0 : preset.enrichment();
         double total = Math.round((runpod + fixed + enrichment) * 1e6) / 1e6;
-        return new TrainingCost(runpod, fixed, enrichment, total);
+        return new TrainingCost(runpod, reported == null ? null : reported.llm(), fixed, enrichment, total,
+                reported == null ? null : reported.llmInputTokens(), reported == null ? null : reported.llmOutputTokens());
     }
 
     /** El usuario elige este training completado como el modelo activo de la lista. */

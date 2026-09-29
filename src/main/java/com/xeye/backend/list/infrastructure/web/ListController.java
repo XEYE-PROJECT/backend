@@ -60,7 +60,8 @@ public class ListController {
     public ListResponse create(@AuthenticationPrincipal AuthenticatedUser current,
                                @Valid @RequestBody CreateListRequest request) {
         return ListResponse.from(lists.create(current.id(),
-                new CreateListCommand(request.name(), request.description(), request.publicOrDefault())), 0);
+                new CreateListCommand(request.name(), request.description(), request.publicOrDefault(),
+                        request.llmEnrichmentOrDefault())), 0);
     }
 
     @PutMapping("/{id}")
@@ -68,7 +69,8 @@ public class ListController {
                                @PathVariable Long id,
                                @Valid @RequestBody UpdateListRequest request) {
         lists.update(current.id(), id,
-                new UpdateListCommand(request.name(), request.description(), request.isPublic()));
+                new UpdateListCommand(request.name(), request.description(), request.isPublic(),
+                        request.llmEnrichment()));
         return ListResponse.from(lists.get(current.id(), id));
     }
 

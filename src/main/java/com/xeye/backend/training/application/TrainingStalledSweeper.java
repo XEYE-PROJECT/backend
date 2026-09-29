@@ -50,6 +50,7 @@ public class TrainingStalledSweeper {
         for (Training training : stalled) {
             // El lanzamiento des-entrenó los elementos de la lista, así que de verdad necesita reentrenar.
             launchService.ensurePending(training.listId(), training.userId());
+            dispatcher.releaseJobInput(training.id());
             metrics.recordOutcome(TrainingMetrics.OUTCOME_STALLED);
         }
         if (!stalled.isEmpty()) {

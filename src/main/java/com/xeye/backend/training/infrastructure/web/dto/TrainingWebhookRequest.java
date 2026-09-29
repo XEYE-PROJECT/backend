@@ -25,6 +25,8 @@ public record TrainingWebhookRequest(
         @Size(max = 2000) String error,
         TimePayload time,
         CostPayload cost,
+        /** Consumo real del LLM en este run (tokens y peticiones); informativo. */
+        UsagePayload usage,
         /** Id de elemento (clave JSON, de ahí String) -> enriquecimiento LLM del worker. */
         @Size(max = 10000) @JsonProperty("generated_descriptions") Map<String, @Size(max = 16000) String> generatedDescriptions,
         /** Elementos con descripción LLM (caché + generadas) al calcular los embeddings. */
@@ -36,15 +38,27 @@ public record TrainingWebhookRequest(
             @JsonProperty("total_seconds") Long totalSeconds) {
     }
 
-    /** El worker solo reporta cómputo; el precio (fijo + descripciones) ya lo fijó el backend al lanzar. */
-    public record CostPayload(Double runpod, Double total) {
+    /**
+     * Coste real del worker: cómputo ({@code runpod}) y LLM por tokens ({@code llm}); el precio
+     * al usuario (fijo + descripciones) ya lo fijó el backend al lanzar y no depende de esto.
+     */
+    public record CostPayload(Double runpod, Double llm, Double total) {
+    }
+
+    public record UsagePayload(
+            @JsonProperty("llm_input_tokens") Long llmInputTokens,
+            @JsonProperty("llm_output_tokens") Long llmOutputTokens,
+            @JsonProperty("llm_requests") Long llmRequests,
+            /** true = el worker paró de enriquecer por el tope de gasto por job (LLM_MAX_COST_PER_JOB). */
+            @JsonProperty("llm_budget_exhausted") Boolean llmBudgetExhausted) {
     }
 
     public TrainingUpdateCommand toCommand() {
         TrainingTime trainingTime = time == null ? null
                 : new TrainingTime(time.optimizingSeconds(), time.trainingSeconds(), time.totalSeconds());
         TrainingCost trainingCost = cost == null ? null
-                : new TrainingCost(cost.runpod(), null, null, cost.total());
+                : new TrainingCost(cost.runpod(), cost.llm(), null, null, cost.total(),
+                        usage == null ? null : usage.llmInputTokens(), usage == null ? null : usage.llmOutputTokens());
         return new TrainingUpdateCommand(trainingId, listId, status, embeddingsData, model, trainingTime,
                 trainingCost, error, parseGeneratedDescriptions(), describedCount);
     }

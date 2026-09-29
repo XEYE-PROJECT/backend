@@ -29,6 +29,9 @@ public class ListJpaEntity {
     @Column(name = "is_public", nullable = false)
     private boolean isPublic;
 
+    @Column(name = "llm_enrichment", nullable = false)
+    private boolean llmEnrichment = true;
+
     @Column(name = "user_id", nullable = false)
     private Long userId;
 
@@ -78,6 +81,14 @@ public class ListJpaEntity {
 
     public void setPublic(boolean isPublic) {
         this.isPublic = isPublic;
+    }
+
+    public boolean isLlmEnrichment() {
+        return llmEnrichment;
+    }
+
+    public void setLlmEnrichment(boolean llmEnrichment) {
+        this.llmEnrichment = llmEnrichment;
     }
 
     public Long getUserId() {

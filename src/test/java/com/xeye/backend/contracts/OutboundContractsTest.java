@@ -2,6 +2,7 @@ package com.xeye.backend.contracts;
 
 import com.xeye.backend.search.infrastructure.web.dto.BootstrapResponse;
 import com.xeye.backend.search.infrastructure.web.dto.ListSearchDataResponse;
+import com.xeye.backend.shared.security.WebhookTokens;
 import com.xeye.backend.training.application.command.SearchIndexCommand;
 import com.xeye.backend.training.application.command.TrainingLaunchCommand;
 import com.xeye.backend.training.domain.model.TrainingOption;
@@ -31,7 +32,8 @@ class OutboundContractsTest {
     void trainingJobMatchesTheWorkerContract() {
         TrainingLaunchCommand command = new TrainingLaunchCommand(42L, 7L, 3L,
                 "https://hooks.xeye.es/webhooks/training-update",
-                new TrainingLaunchCommand.ListPayload(7L, "Herramientas", "Catálogo de ferretería"),
+                WebhookTokens.issue("it-webhook-secret-0123456789abcdef0123456789", 42),
+                new TrainingLaunchCommand.ListPayload(7L, "Herramientas", "Catálogo de ferretería", true),
                 List.of(
                         new TrainingLaunchCommand.ElementPayload(101L, "martillo de carpintero", "Mango de madera, 500 g",
                                 null, false),

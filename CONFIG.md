@@ -76,7 +76,7 @@ Guard = lo comprueba `ProductionConfigGuard` al arrancar con el perfil `prod`.
 | Variable | Descripción | Default dev | Prod | Guard |
 |---|---|---|---|---|
 | `TRAINING_PROVIDER` | `mock` (solo dev), `docker` o `runpod` | `mock` | **docker** o **runpod** | `mock` prohibido |
-| `TRAINING_WEBHOOK_SECRET` 🔑 | `X-Webhook-Token` del callback; el worker lo recibe por su entorno (`WEBHOOK_SECRET`) | `dev-webhook-secret` | **sí** | ≥ 32 chars, no dev |
+| `TRAINING_WEBHOOK_SECRET` 🔑 | Firma (HMAC-SHA256) el token por entrenamiento del job, que el worker devuelve en `X-Webhook-Token`; el secreto no sale del backend | `dev-webhook-secret` | **sí** | ≥ 32 chars, no dev |
 | `BACKEND_URL` | URL pública de este backend (redirect del SSO y, por defecto, callback del worker) | `http://localhost:8000` | **sí** | `https://`, sin localhost |
 | `TRAINING_CALLBACK_BASE_URL` | Host aparte para el callback del worker (`…/webhooks/training-update`) cuando `BACKEND_URL` pasa por el WAF/CDN (tope de body 100 MB en Cloudflare): en prod `https://hooks.xeye.es`, que va directo a Caddy | vacío (= `BACKEND_URL`) | recomendado con Cloudflare | `https://`, sin localhost |
 | `TRAINING_EMBEDDING_MODELS` | Modelos ofrecidos (el primero = por defecto); worker y search deben poder cargarlos | MiniLM,mpnet | recomendado | — |
@@ -89,7 +89,8 @@ Guard = lo comprueba `ProductionConfigGuard` al arrancar con el perfil `prod`.
 | `TRAINING_MOCK_DELAY_MS` | Solo provider mock | `500` | — | — |
 | `RUNPOD_API_KEY` 🔑 / `RUNPOD_ENDPOINT_ID` / `RUNPOD_TIMEOUT_SECONDS` | Provider runpod | vacío | si runpod | — |
 | `TRAINING_DOCKER_IMAGE` / `_NETWORK` / `_GPUS` / `_BINARY` | Provider docker | ver `.env.example` | si docker | — |
-| `TRAINING_INPUT_DIR` / `TRAINING_HOST_INPUT_DIR` | Dónde se escribe el JSON del job y cómo lo ve el daemon | `/tmp/xeye-training` | si docker | — |
+| `TRAINING_INPUT_DIR` / `TRAINING_HOST_INPUT_DIR` | Dónde se escribe el JSON del job (600, borrado al primer callback) y cómo lo ve el daemon | `~/.xeye/training-jobs` | si docker | — |
+| `TRAINING_DOCKER_WORKER_UID` | uid del worker en su imagen: se le cede el fichero 600 del job cuando el backend corre como root; vacío = no cambiar el propietario | `1000` | opcional | — |
 | `TRAINING_DOCKER_ENV` 🔑 | `KEY=VALUE,...` extra para el worker (puede llevar claves de LLM; se redacta en los logs) | vacío | opcional | — |
 
 ## Buscador (`xeye.search.*`)

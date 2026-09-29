@@ -76,7 +76,7 @@ Referencia completa (todas las variables, con lo **obligatorio en producción** 
 | `CORS_ORIGINS` | Orígenes exactos del frontend, separados por comas |
 | `TRAINING_PROVIDER` | `mock` (solo dev), `docker` o `runpod` |
 | `RUNPOD_API_KEY`, `RUNPOD_ENDPOINT_ID`, `BACKEND_URL` | Entrenamiento real |
-| `TRAINING_WEBHOOK_SECRET` | Secreto de `X-Webhook-Token`; el worker lo recibe por su entorno (`WEBHOOK_SECRET`), nunca en el job |
+| `TRAINING_WEBHOOK_SECRET` | Firma (HMAC) el token por entrenamiento que viaja en el job y que el worker devuelve en `X-Webhook-Token`; el secreto no sale del backend |
 | `SEARCH_PROVIDER` | `log` (solo dev) o `http` |
 | `SEARCH_SERVICE_URL`, `SEARCH_INTERNAL_TOKEN` | URL y secreto compartido (`X-Internal-Token`) del microservicio de búsqueda |
 | `SENTRY_DSN`, `SENTRY_ENVIRONMENT` | Error tracking (vacío = desactivado) |
@@ -109,7 +109,8 @@ GET  /actuator/health
 ```
 
 Servidor a servidor (secreto compartido en cabecera, comparado en tiempo constante, 403 si
-falta o no coincide): `POST /webhooks/training-update` (`X-Webhook-Token`, worker de training)
+falta o no coincide): `POST /webhooks/training-update` (`X-Webhook-Token` = token por entrenamiento
+`<id>.<hmac>` que el backend metió en el job; solo puede reportar sobre ese run)
 y `/internal/search/*` (`X-Internal-Token`, search-service; el proxy de producción no los
 publica). El resto requiere cabecera `Authorization: Bearer <token>` (JWT de 60 min con `jti`
 revocable y versión de sesión: cambiar contraseña/email, activar 2FA o "cerrar todas las
@@ -125,7 +126,8 @@ GET /admin/users, GET|PUT|DELETE /admin/users/{id}, POST /admin/users/{id}/logou
                                   búsquedas/min de la cuenta, compartido por todas sus API keys)
 GET|POST /api-keys        PUT|DELETE /api-keys/{id}   (POST es la ÚNICA respuesta con la clave completa;
                                                       después solo existe su hash y se muestra el prefijo)
-GET|POST /lists           GET|PUT|DELETE /lists/{id}   (GET /lists admite ?q= y ?public=; cada lista trae elementCount)
+GET|POST /lists           GET|PUT|DELETE /lists/{id}   (GET /lists admite ?q= y ?public=; cada lista trae elementCount;
+                                                       llmEnrichment=false = opt-out del LLM: se entrena sin descripciones IA)
 POST /lists/{listId}/search          playground de la consola: {searchTerm, limit?, includeScoreBreakdown?}
                                      -> el backend reenvía al buscador por la red interna (también
                                      listas privadas; la API key nunca pasa por el navegador); la

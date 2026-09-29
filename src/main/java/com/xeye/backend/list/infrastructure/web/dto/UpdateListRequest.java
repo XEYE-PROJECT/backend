@@ -7,5 +7,6 @@ import jakarta.validation.constraints.Size;
 public record UpdateListRequest(
         @Size(max = 100) String name,
         @Size(max = 2000) String description,
-        @JsonProperty("public") Boolean isPublic) {
+        @JsonProperty("public") Boolean isPublic,
+        Boolean llmEnrichment) {
 }

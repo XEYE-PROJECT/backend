@@ -19,5 +19,17 @@ crea el tag que publica la imagen `ghcr.io/xeye-project/backend:vX.Y.Z` y la Git
   métricas Prometheus, request id, logs JSON, Sentry.
 - CI: gitleaks, checkstyle, tests unitarios y de integración (Testcontainers), tests de contrato
   con el buscador y el worker, imagen escaneada con Trivy, despliegue por SHA con rollback.
+- Datos hacia el LLM (sección D): opt-out por lista (`llmEnrichment` en `POST/PUT /lists`,
+  migración V10): esas listas se entrenan siempre sin descripciones IA y el job lleva
+  `list.llm_enrichment=false`; coste real del worker (`cost.llm`, tokens) guardado en el training.
+- Webhook del worker autenticado con un token **por entrenamiento** (`webhook_token` en el job,
+  HMAC-SHA256 del secreto): el secreto ya no sale del backend (ni al fichero del job ni a RunPod)
+  y un token solo puede reportar sobre su run (`WEBHOOK_TOKEN_MISMATCH` si no coincide).
+- Provider docker: fichero del job con permisos 600 en `~/.xeye/training-jobs` (fuera de `/tmp`),
+  cedido al uid del worker, borrado en el primer callback, al fallar el lanzamiento o al marcar
+  el run estancado; ya no pasa `WEBHOOK_SECRET` al contenedor.
+
+### Cambiado
+- `X-Webhook-Token` ya no acepta el secreto en claro: solo tokens por entrenamiento.
 
 [Unreleased]: https://github.com/XEYE-PROJECT/backend/compare/master...HEAD

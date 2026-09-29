@@ -3,6 +3,8 @@ package com.xeye.backend.training.infrastructure.web;
 import com.xeye.backend.training.application.TrainingDispatcher;
 import com.xeye.backend.training.application.command.TrainingUpdateCommand;
 import com.xeye.backend.training.application.port.in.TrainingCompletionHandler;
+import com.xeye.backend.shared.exception.ForbiddenException;
+import com.xeye.backend.shared.security.ServicePrincipal;
 import com.xeye.backend.training.application.port.out.TrainingMetrics;
 import com.xeye.backend.training.infrastructure.web.dto.TrainingWebhookRequest;
 import com.xeye.backend.training.infrastructure.web.dto.WebhookAck;
@@ -10,6 +12,7 @@ import jakarta.validation.Valid;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.dao.OptimisticLockingFailureException;
+import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -19,8 +22,11 @@ import java.util.Locale;
 
 /**
  * Callback de progreso/finalización del worker de training. La autenticación no vive aquí:
- * {@code SharedSecretAuthenticationFilter} (ver {@code SecurityConfig}) exige la cabecera
- * {@code X-Webhook-Token} en {@code /webhooks/**} y rechaza con 403 antes de llegar al controlador.
+ * {@code SharedSecretAuthenticationFilter} (ver {@code SecurityConfig}) exige en {@code /webhooks/**}
+ * la cabecera {@code X-Webhook-Token} con el token por entrenamiento y rechaza con 403 antes de
+ * llegar al controlador; aquí solo se comprueba que el training que firma el token es el del
+ * cuerpo (un token de otro run no puede completar este). Tras cualquier callback se libera el
+ * fichero del job del provider docker: el worker ya lo leyó.
  * Idempotente: un callback repetido o fuera de orden responde 200 con {@code applied: false}.
  * Dos callbacks simultáneos del mismo run chocan por bloqueo optimista; se reintenta un par de
  * veces (fuera de la transacción) y el segundo ve el estado ya aplicado.
@@ -44,9 +50,15 @@ public class TrainingWebhookController {
     }
 
     @PostMapping("/training-update")
-    public WebhookAck update(@Valid @RequestBody TrainingWebhookRequest request) {
+    public WebhookAck update(@AuthenticationPrincipal ServicePrincipal worker,
+                             @Valid @RequestBody TrainingWebhookRequest request) {
+        if (worker == null || worker.trainingId() == null || !worker.trainingId().equals(request.trainingId())) {
+            throw new ForbiddenException("The webhook token does not belong to training " + request.trainingId(),
+                    "WEBHOOK_TOKEN_MISMATCH");
+        }
         TrainingUpdateCommand command = request.toCommand();
         boolean applied = applyWithRetry(command);
+        dispatcher.releaseJobInput(command.trainingId());
         String status = command.status().trim().toLowerCase(Locale.ROOT);
         if (applied && ("completed".equals(status) || "failed".equals(status))) {
             metrics.recordOutcome("completed".equals(status)

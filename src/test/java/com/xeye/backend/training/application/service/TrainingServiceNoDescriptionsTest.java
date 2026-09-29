@@ -4,6 +4,7 @@ import com.xeye.backend.element.application.port.in.ElementQueryPort;
 import com.xeye.backend.element.domain.model.Element;
 import com.xeye.backend.list.application.port.in.ListQueryPort;
 import com.xeye.backend.list.domain.model.ItemList;
+import com.xeye.backend.shared.security.WebhookTokens;
 import com.xeye.backend.training.application.command.TrainingLaunchCommand;
 import com.xeye.backend.training.application.port.in.TrainingUseCases.CostEstimate;
 import com.xeye.backend.training.application.port.out.SearchIndexer;
@@ -19,6 +20,7 @@ import java.util.List;
 import java.util.Optional;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
@@ -79,6 +81,46 @@ class TrainingServiceNoDescriptionsTest {
         assertEquals(TRAINING_ID, command.trainingId());
         assertEquals(FIXED_PRICE, queued.cost().total());
         assertEquals(0.0, queued.cost().enrichment());
+    }
+
+    @Test
+    void aListThatOptedOutOfTheLlmAlwaysTrainsWithoutDescriptions() {
+        Training pending = TrainingServiceLaunchGuardTest.training(TRAINING_ID, LIST_ID, USER_ID, TrainingStatus.PENDING);
+        when(trainings.findByIdAndUserId(TRAINING_ID, USER_ID)).thenReturn(Optional.of(pending));
+        when(trainings.existsInProgressByListId(LIST_ID)).thenReturn(false);
+        when(trainings.save(any())).thenAnswer(inv -> inv.getArgument(0));
+        givenALaunchableListWithAnUnenrichedElement();
+        when(lists.findById(LIST_ID)).thenReturn(Optional.of(
+                new ItemList(LIST_ID, "list", "desc", false, false, USER_ID, null, null, null)));
+
+        // El usuario pide descripciones (regenerar, sin noDescriptions): el opt-out de la lista gana.
+        Training queued = service().enqueue(TRAINING_ID, USER_ID, null, true, false);
+        assertTrue(queued.options().contains(new TrainingOption("strategy", "embeddings_only")));
+        assertTrue(queued.options().contains(new TrainingOption("force_enrich", false)));
+
+        when(trainings.findById(TRAINING_ID)).thenReturn(Optional.of(queued));
+        TrainingLaunchCommand command = service().prepareLaunch(TRAINING_ID);
+        assertFalse(command.list().llmEnrichment());
+        assertEquals(0.0, queued.cost().enrichment());
+        // Y la estimación tampoco cobra descripciones aunque se pidan.
+        assertEquals(0, service().estimateCost(USER_ID, LIST_ID, true, false).descriptionsToGenerate());
+    }
+
+    @Test
+    void theJobCarriesAPerTrainingWebhookTokenAndNeverTheSecret() {
+        Training pending = TrainingServiceLaunchGuardTest.training(TRAINING_ID, LIST_ID, USER_ID, TrainingStatus.PENDING);
+        when(trainings.findByIdAndUserId(TRAINING_ID, USER_ID)).thenReturn(Optional.of(pending));
+        when(trainings.existsInProgressByListId(LIST_ID)).thenReturn(false);
+        when(trainings.save(any())).thenAnswer(inv -> inv.getArgument(0));
+        givenALaunchableListWithAnUnenrichedElement();
+        Training queued = service().enqueue(TRAINING_ID, USER_ID, null, false, false);
+        when(trainings.findById(TRAINING_ID)).thenReturn(Optional.of(queued));
+
+        TrainingLaunchCommand command = service().prepareLaunch(TRAINING_ID);
+
+        assertEquals(Optional.of(TRAINING_ID), WebhookTokens.verify("secret", command.webhookToken()));
+        assertFalse(command.webhookToken().contains("secret"));
+        assertTrue(command.list().llmEnrichment());
     }
 
     @Test

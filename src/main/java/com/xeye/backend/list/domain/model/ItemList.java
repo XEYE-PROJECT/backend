@@ -7,6 +7,8 @@ import java.util.Objects;
  * Lista de elementos de un usuario (se llama {@code ItemList} para no chocar con
  * {@code java.util.List}). Su {@code description} es contexto de entrenamiento de toda la
  * lista: cambiarla dispara un reentrenamiento (gestionado en la capa de aplicación).
+ * {@code llmEnrichment} false = el dueño renuncia a las descripciones generadas por un LLM: sus
+ * textos no se envían a ningún modelo de lenguaje (los entrenamientos van sin paso LLM).
  * {@code version} es el contador de bloqueo optimista de la fila (null en listas nuevas).
  */
 public class ItemList {
@@ -18,6 +20,7 @@ public class ItemList {
     private String name;
     private String description;
     private boolean isPublic;
+    private boolean llmEnrichment;
     private final Long userId;
     private final Long version;
     private final Instant createdAt;
@@ -25,23 +28,30 @@ public class ItemList {
 
     public ItemList(Long id, String name, String description, boolean isPublic, Long userId,
                     Instant createdAt, Instant updatedAt) {
-        this(id, name, description, isPublic, userId, null, createdAt, updatedAt);
+        this(id, name, description, isPublic, true, userId, null, createdAt, updatedAt);
     }
 
     public ItemList(Long id, String name, String description, boolean isPublic, Long userId, Long version,
                     Instant createdAt, Instant updatedAt) {
+        this(id, name, description, isPublic, true, userId, version, createdAt, updatedAt);
+    }
+
+    public ItemList(Long id, String name, String description, boolean isPublic, boolean llmEnrichment,
+                    Long userId, Long version, Instant createdAt, Instant updatedAt) {
         this.id = id;
         this.name = requireText(name);
         this.description = normalizeDescription(description);
         this.isPublic = isPublic;
+        this.llmEnrichment = llmEnrichment;
         this.userId = Objects.requireNonNull(userId, "userId");
         this.version = version;
         this.createdAt = createdAt;
         this.updatedAt = updatedAt;
     }
 
-    public static ItemList create(Long userId, String name, String description, boolean isPublic) {
-        return new ItemList(null, name, description, isPublic, userId, null, null, null);
+    public static ItemList create(Long userId, String name, String description, boolean isPublic,
+                                  boolean llmEnrichment) {
+        return new ItemList(null, name, description, isPublic, llmEnrichment, userId, null, null, null);
     }
 
     public void rename(String name) {
@@ -54,6 +64,10 @@ public class ItemList {
 
     public void changeVisibility(boolean isPublic) {
         this.isPublic = isPublic;
+    }
+
+    public void changeLlmEnrichment(boolean llmEnrichment) {
+        this.llmEnrichment = llmEnrichment;
     }
 
     private static String requireText(String value) {
@@ -92,6 +106,11 @@ public class ItemList {
 
     public boolean isPublic() {
         return isPublic;
+    }
+
+    /** true = los entrenamientos pueden generar descripciones con un LLM; false = opt-out del dueño. */
+    public boolean llmEnrichment() {
+        return llmEnrichment;
     }
 
     public Long userId() {

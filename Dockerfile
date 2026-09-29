@@ -8,6 +8,8 @@ FROM maven:3.9-eclipse-temurin-21@sha256:99e61abcff91a9b1333463bd8451fb18495d6eb
 WORKDIR /app
 COPY pom.xml .
 RUN mvn -B -q dependency:go-offline
+# checkstyle.xml: el plugin corre en la fase validate también dentro de `package`.
+COPY checkstyle.xml .
 COPY src ./src
 # Los tests corren en CI (job `test` del workflow) antes de construir la imagen.
 RUN mvn -B -DskipTests package

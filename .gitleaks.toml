@@ -4,7 +4,13 @@
 useDefault = true
 
 [allowlist]
-description = "Documentación de skills de Claude con ejemplos de curl/tokens ficticios"
+description = "Rutas con ejemplos y vectores de prueba, nunca secretos reales"
 paths = [
+  # Skills de Claude: ejemplos de curl con tokens ficticios.
   '''\.claude/skills/.*''',
+  # Fixtures de contrato entre servicios: hashes de ejemplo y el token de webhook derivado del
+  # secreto de los tests de integración (it-webhook-secret…), que solo existe en los tests.
+  '''src/test/resources/contracts/.*''',
+  # Vector de prueba del RFC 6238 (secreto TOTP público del propio RFC).
+  '''src/test/java/com/xeye/backend/shared/security/TotpTest\.java''',
 ]

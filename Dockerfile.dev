@@ -1,7 +1,7 @@
 # Imagen de desarrollo: ejecuta la app con Maven + Spring Boot DevTools, de modo que los
 # cambios recompilados a target/classes provocan un reinicio automático dentro del contenedor.
 # Para producción se construiría un fat jar sobre un JRE ligero.
-FROM maven:3.9-eclipse-temurin-21
+FROM maven:3-eclipse-temurin-26
 
 WORKDIR /app
 

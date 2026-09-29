@@ -15,6 +15,9 @@
 	<description>XEYE backend — modular hexagonal Spring Boot API</description>
 
 	<properties>
+		<!-- Tomcat embebido por encima del gestionado por Boot 4.1.0 (11.0.22): CVE-2026-65182, -65905 y -68525
+		     (críticas, con arreglo) bloqueaban el despliegue en el escaneo Trivy de la imagen. -->
+		<tomcat.version>11.0.25</tomcat.version>
 		<java.version>17</java.version>
 		<jjwt.version>0.12.6</jjwt.version>
 		<sentry.version>8.44.1</sentry.version>

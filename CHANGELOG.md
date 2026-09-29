@@ -6,6 +6,9 @@ crea el tag que publica la imagen `ghcr.io/xeye-project/backend:vX.Y.Z` y la Git
 
 ## [Unreleased]
 
+### Seguridad
+- Tomcat embebido 11.0.25 (CVE-2026-65182, CVE-2026-65905, CVE-2026-68525; críticas con arreglo que bloqueaban el despliegue en el escaneo Trivy).
+
 ### Añadido
 - Reconstrucción del backend en Java 17 / Spring Boot 4 como monolito modular hexagonal
   (usuarios, api keys, listas, elementos, trainings, búsqueda) sobre MariaDB con Flyway.

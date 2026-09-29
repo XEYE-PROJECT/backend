@@ -1,10 +1,12 @@
 name: CI/CD
 
-# Push a master: gitleaks + tests → imagen (etiquetada con el SHA) → escaneo Trivy → despliegue
-# a staging (si está habilitado) → despliegue a producción (entorno `production`: con "required
-# reviewers" configurados en Settings → Environments, el job espera aprobación manual).
-# Ejecución manual (workflow_dispatch): vuelve a desplegar un SHA ya publicado en GHCR en el
-# entorno elegido, sin reconstruir nada — es el rollback desde GitHub
+# Push a master: checks (gitleaks + checkstyle + tests unitarios e integración, checks.yml) →
+# imagen (etiquetada con el SHA) → escaneo Trivy → despliegue a staging (si está habilitado) →
+# despliegue a producción (entorno `production`: con "required reviewers" configurados en
+# Settings → Environments, el job espera aprobación manual).
+# Pull requests: ci.yml ejecuta solo los checks. Tags vX.Y.Z: release.yml publica la versión.
+# Ejecución manual (workflow_dispatch): vuelve a desplegar un SHA (o vX.Y.Z) ya publicado en GHCR
+# en el entorno elegido, sin reconstruir nada — es el rollback desde GitHub
 # (`deploy.sh` en el servidor hace lo mismo por SSH).
 #
 # Todas las actions van fijadas por SHA de commit (el tag es solo un comentario); Dependabot las
@@ -15,7 +17,7 @@ on:
   workflow_dispatch:
     inputs:
       sha:
-        description: 'SHA completo ya publicado en GHCR (vacío = el commit actual de master)'
+        description: 'SHA completo o vX.Y.Z ya publicado en GHCR (vacío = el commit actual de master)'
         required: false
         default: ''
       target:
@@ -35,36 +37,13 @@ env:
   IMAGE: ghcr.io/xeye-project/backend
 
 jobs:
-  # Ningún secreto llega al historial: gitleaks sobre todo el repo (binario oficial vía docker;
-  # la action de gitleaks exige licencia en organizaciones, el binario no).
-  secrets:
+  checks:
     if: github.event_name == 'push'
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
-        with:
-          fetch-depth: 0
-      - name: gitleaks
-        run: >
-          docker run --rm -v "$PWD:/repo"
-          -e GIT_CONFIG_COUNT=1 -e GIT_CONFIG_KEY_0=safe.directory -e GIT_CONFIG_VALUE_0=/repo
-          ghcr.io/gitleaks/gitleaks:v8.30.1@sha256:c00b6bd0aeb3071cbcb79009cb16a60dd9e0a7c60e2be9ab65d25e6bc8abbb7f git /repo --redact -v --exit-code 1
-
-  test:
-    if: github.event_name == 'push'
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
-      - uses: actions/setup-java@b6effb05e454b25005698d916606bdc6ffcbf961 # v5.7.0
-        with:
-          distribution: temurin
-          java-version: '21'
-          cache: maven
-      - run: mvn -B test
+    uses: ./.github/workflows/checks.yml
 
   build-push:
     if: github.event_name == 'push'
-    needs: [secrets, test]
+    needs: checks
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -172,7 +151,7 @@ jobs:
       - name: Validar el SHA
         run: |
           sha='${{ inputs.sha || github.sha }}'
-          [[ "$sha" =~ ^[0-9a-f]{40}$ ]] || { echo "::error::SHA no válido: $sha"; exit 1; }
+          [[ "$sha" =~ ^([0-9a-f]{40}|v[0-9]+\.[0-9]+\.[0-9]+)$ ]] || { echo "::error::referencia no válida: $sha"; exit 1; }
           echo "sha=$sha" >> "$GITHUB_ENV"
       - uses: appleboy/ssh-action@0ff4204d59e8e51228ff73bce53f80d53301dee2 # v1.2.5
         with:

@@ -1,7 +1,6 @@
 package com.xeye.backend.user.application.port.in;
 
 import com.xeye.backend.shared.security.AuthenticatedUser;
-import com.xeye.backend.user.application.command.AuthResult;
 import com.xeye.backend.user.application.command.LoginCommand;
 import com.xeye.backend.user.application.command.LoginOutcome;
 import com.xeye.backend.user.application.command.MfaVerified;

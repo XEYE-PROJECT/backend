@@ -167,11 +167,30 @@ curl -s -X POST localhost:8080/lists -H "Authorization: Bearer $TOKEN" \
   -H 'Content-Type: application/json' -d '{"name":"Productos","description":"...","public":true}'
 ```
 
-## Tests
+## Tests, estilo y CI
 
 ```bash
-mvn test     # tests unitarios (dominio, política de contraseñas, TOTP, JWT, rate limiter, guard de producción; sin BD)
+mvn test              # checkstyle + tests unitarios (dominio, JWT, TOTP, rate limiter, guard de prod, contratos; sin BD)
+mvn verify            # lo anterior + tests de integración (*IT.java): MariaDB real vía Testcontainers (necesita docker)
+mvn checkstyle:check  # solo el estilo (checkstyle.xml: imports, llaves, espacios, líneas ≤ 140)
 ```
+
+- **Integración** (`src/test/java/.../it`): la app entera con perfil `dev` sobre `mariadb:10.11`,
+  migraciones de Flyway aplicadas, HTTP real: seguridad (JWT, admin, secretos de servicio),
+  errores (`GlobalExceptionHandler`), esquema y el webhook con los payloads reales del worker.
+- **Contratos** (`src/test/resources/contracts/`, copia canónica): un JSON de ejemplo por mensaje
+  entre servicios (job al worker, webhook, push de índice, bootstrap, datos de lista). Aquí se
+  comprueba que los records producen/aceptan exactamente ese JSON; el buscador y el worker tienen
+  copias idénticas y sus propios tests (`bash contracts-check.sh` en `xeye-infra` verifica que
+  las tres copias coinciden).
+- **CI** (`.github/workflows/`): `ci.yml` en cada pull request ejecuta `checks.yml` (gitleaks +
+  `mvn verify`); `deploy.yml` en cada push a master hace lo mismo y después imagen `:sha`,
+  Trivy y despliegue; `release.yml` en cada tag `vX.Y.Z` publica la imagen `:vX.Y.Z` y la GitHub
+  Release con las notas del `CHANGELOG.md`. La protección de `master` (PR + checks en verde) se
+  importa desde `xeye-infra/github/ruleset-master.json`.
+- **Versionar**: anota los cambios en `CHANGELOG.md` ("Unreleased") y publica con
+  `bash release.sh X.Y.Z` (mueve la sección, fija la versión del `pom.xml`, commit + tag; después
+  `git push origin master --tags`). Desplegar una versión concreta: `deploy.sh xeye-backend vX.Y.Z`.
 
 ## Estructura
 

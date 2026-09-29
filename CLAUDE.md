@@ -286,9 +286,19 @@ docker compose -f docker-compose.dev.yml exec backend mvn -o compile
 mvn spring-boot:run      # activates profile 'dev' (pom); defaults to the compose DB on localhost:3307 (DB_URL/DB_USERNAME/DB_PASSWORD override)
 
 mvn -q compile           # compile only
-mvn test                 # pure domain unit tests (no DB needed)
+mvn test                 # checkstyle + unit tests (domain, security, contracts; no DB needed)
+mvn verify               # + integration tests (*IT.java, Testcontainers mariadb:10.11; needs docker)
 mvn -q -DskipTests package
 ```
+
+**Tests and contracts.** `mvn test` runs checkstyle (`checkstyle.xml`, fails the build) and the unit
+tests; `mvn verify` adds the `src/test/java/.../it` suite (whole app, profile `dev`, real MariaDB,
+real HTTP). `src/test/resources/contracts/*.json` are the **canonical** examples of every message
+exchanged with the search service and the worker; `contracts/*ContractsTest` and `WebhookContractIT`
+pin them. When a cross-service DTO changes: edit the fixture here, copy it byte-for-byte to
+`../search-service/tests/contracts` and `../training-service/tests/contracts`, and fix the tests on
+each side. CI: `ci.yml` (PR) and `deploy.yml` (push to master) both call `checks.yml`; `release.yml`
+(tag `vX.Y.Z`, created by `release.sh`) publishes `:vX.Y.Z` and the GitHub Release from `CHANGELOG.md`.
 
 Hot reload: DevTools watches `target/classes`. Saving a file in an IDE that auto-compiles
 (VS Code Java, IntelliJ) triggers a restart; otherwise run `mvn compile`.

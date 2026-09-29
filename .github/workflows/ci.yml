@@ -1,0 +1,17 @@
+name: CI
+
+# Pull requests: las mismas comprobaciones que el push a master (checks.yml), sin construir ni
+# desplegar nada. Son los checks que la protección de master exige (ver xeye-infra/github/).
+on:
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  checks:
+    uses: ./.github/workflows/checks.yml

@@ -120,7 +120,8 @@ public class ProductionConfigGuard {
         String emailProvider = env.getProperty("xeye.email.provider", "");
         boolean verification = env.getProperty("xeye.auth.require-email-verification", Boolean.class, true);
         if ("log".equalsIgnoreCase(emailProvider) && verification) {
-            problems.add("EMAIL_PROVIDER=log cannot deliver verification emails in production (use smtp or resend, or set AUTH_REQUIRE_EMAIL_VERIFICATION=false)");
+            problems.add("EMAIL_PROVIDER=log cannot deliver verification emails in production "
+                    + "(use smtp or resend, or set AUTH_REQUIRE_EMAIL_VERIFICATION=false)");
         }
         if ("smtp".equalsIgnoreCase(emailProvider)) {
             if (env.getProperty("spring.mail.username", "").isBlank() || env.getProperty("spring.mail.password", "").isBlank()) {

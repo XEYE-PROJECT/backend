@@ -30,7 +30,10 @@ import tools.jackson.databind.ObjectMapper;
 
 import java.util.List;
 
-/** Los elementos se listan/crean bajo su lista ({@code /lists/{listId}/elements}) y se actualizan/borran por su propio id ({@code /elements/{id}}). */
+/**
+ * Los elementos se listan/crean bajo su lista ({@code /lists/{listId}/elements}) y se
+ * actualizan/borran por su propio id ({@code /elements/{id}}).
+ */
 @RestController
 @Validated
 public class ElementController {

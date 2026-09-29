@@ -18,7 +18,7 @@
 		<java.version>17</java.version>
 		<jjwt.version>0.12.6</jjwt.version>
 		<sentry.version>8.44.1</sentry.version>
-		<checkstyle.version>10.26.1</checkstyle.version>
+		<checkstyle.version>14.1.0</checkstyle.version>
 	</properties>
 
 	<dependencies>

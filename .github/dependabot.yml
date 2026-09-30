@@ -24,9 +24,20 @@ updates:
       # Spring Boot mayor: se migra a mano (ver CLAUDE.md, "Spring Boot 4 gotchas").
       - dependency-name: org.springframework.boot:spring-boot-starter-parent
         update-types: ["version-update:semver-major"]
+      # Checkstyle mayor cambia reglas y formato de checkstyle.xml: a mano.
+      - dependency-name: com.puppycrawl.tools:checkstyle
+        update-types: ["version-update:semver-major"]
 
   - package-ecosystem: docker
     directory: /
     schedule:
       interval: weekly
       day: monday
+    ignore:
+      # Cambiar de versión de Java (JRE 21 -> 25, JDK de la imagen de build) es una migración de
+      # plataforma: se hace a mano probando todo. Aquí solo llegan los parches y digests del JRE 21.
+      - dependency-name: eclipse-temurin
+        update-types: ["version-update:semver-major"]
+      # La imagen de build lleva el JDK en el sufijo del tag (3.9-eclipse-temurin-21), que
+      # Dependabot no trata como versión mayor: se actualiza a mano junto con el JRE.
+      - dependency-name: maven

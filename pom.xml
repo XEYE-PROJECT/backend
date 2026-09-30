@@ -5,7 +5,7 @@
 	<parent>
 		<groupId>org.springframework.boot</groupId>
 		<artifactId>spring-boot-starter-parent</artifactId>
-		<version>4.1.0</version>
+		<version>4.1.1</version>
 		<relativePath/> <!-- lookup parent from repository -->
 	</parent>
 	<groupId>com.xeye</groupId>
@@ -19,8 +19,8 @@
 		     (críticas, con arreglo) bloqueaban el despliegue en el escaneo Trivy de la imagen. -->
 		<tomcat.version>11.0.25</tomcat.version>
 		<java.version>17</java.version>
-		<jjwt.version>0.12.6</jjwt.version>
-		<sentry.version>8.44.1</sentry.version>
+		<jjwt.version>0.13.0</jjwt.version>
+		<sentry.version>8.58.0</sentry.version>
 		<checkstyle.version>10.26.1</checkstyle.version>
 	</properties>
 
